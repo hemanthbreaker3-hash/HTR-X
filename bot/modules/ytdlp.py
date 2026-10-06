@@ -294,8 +294,12 @@ class YtDlp(TaskListener):
         self.is_social = bool(kwargs.get('is_social', False))
 
     async def new_event(self):
-        text = self.message.text.split("\n")
-        input_list = text[0].split(" ")
+        raw_text = self.message.text or self.message.caption or ""
+        text = raw_text.split("\n") if raw_text else [""]
+        input_list = text[0].split()
+        # Commands can be used by replying to a URL/media message.
+        if not input_list:
+            input_list = ["/ytdl"]
         qual = ""
 
         check_msg, check_button = await pre_task_check(self.message)
@@ -461,8 +465,9 @@ class YtDlp(TaskListener):
         opt = opt or self.user_dict.get("YT_DLP_OPTIONS") or Config.YT_DLP_OPTIONS
 
         if not self.link and (reply_to := self.message.reply_to_message):
-            if reply_to.text:
-                self.link = reply_to.text.split("\n", 1)[0].strip()
+            reply_text = reply_to.text or reply_to.caption or ""
+            if reply_text:
+                self.link = reply_text.split("\n", 1)[0].strip()
 
         if not is_url(self.link):
             await send_message(
@@ -540,7 +545,7 @@ class YtDlp(TaskListener):
                         else:
                             qual = value
                     options[key] = value
-        options["playlist_items"] = "0"
+        options["playlist_items"] = "1"
         try:
             if is_youtube_link(self.link):
                 result, self.yt_cfg, _ = await sync_to_async(

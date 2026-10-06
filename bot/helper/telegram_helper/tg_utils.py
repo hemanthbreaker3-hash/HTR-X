@@ -15,6 +15,10 @@ from ..ext_utils.status_utils import get_readable_time
 from .button_build import ButtonMaker
 
 
+_FORCESUB_CACHE = {}
+_FORCESUB_CACHE_TTL = 30
+
+
 async def chat_info(channel_id):
     channel_id = str(channel_id).strip()
     if channel_id.startswith("-100"):
@@ -31,30 +35,63 @@ async def chat_info(channel_id):
 
 
 async def forcesub(message, ids, button=None):
+    # Force-sub must fail open when Telegram cannot resolve a configured channel.
+    # A broken/old channel ID should never block every command.
     button = ButtonMaker() if button is None else button
     join_button = {}
     _msg = ""
+    user = message.from_user
+    if not user:
+        return _msg, button
+
+    channel_ids = []
+    for raw in str(ids or "").replace(",", " ").split():
+        raw = raw.strip()
+        if raw and raw not in channel_ids:
+            channel_ids.append(raw)
 
     async def _check_channel(channel_id):
+        cache_key = (user.id, channel_id)
+        cached = _FORCESUB_CACHE.get(cache_key)
+        now = time()
+        if cached and now - cached[0] < _FORCESUB_CACHE_TTL:
+            return cached[1]
         chat = await chat_info(channel_id)
         if chat is None:
+            LOGGER.warning(f"Force-sub skipped unresolved channel: {channel_id}")
             return None
         try:
-            await chat.get_member(message.from_user.id)
+            member = await chat.get_member(user.id)
+            # Telegram can return a member object for all valid membership states.
+            if getattr(member, "status", None) in ("left", "kicked"):
+                raise UserNotParticipant
+            _FORCESUB_CACHE[cache_key] = (now, None)
             return None
         except UserNotParticipant:
-            if username := chat.username:
-                invite_link = f"https://t.me/{username}"
+            invite_link = None
+            if getattr(chat, "username", None):
+                invite_link = f"https://t.me/{chat.username}"
             else:
-                invite_link = chat.invite_link
-            return (chat.title, invite_link)
+                invite_link = getattr(chat, "invite_link", None)
+                if not invite_link:
+                    try:
+                        invite_link = await TgClient.bot.export_chat_invite_link(chat.id)
+                    except Exception as e:
+                        LOGGER.warning(f"Could not create Force-sub invite for {channel_id}: {e}")
+            if invite_link:
+                result = (chat.title or str(chat.id), invite_link)
+                _FORCESUB_CACHE[cache_key] = (now, result)
+                return result
+            # Membership was confirmed missing but there is no usable join URL.
+            # Do not turn this into a global command outage.
+            return None
         except RPCError as e:
-            LOGGER.error(f"{e.NAME}: {e.MESSAGE} for {channel_id}")
+            LOGGER.warning(f"Force-sub membership check failed for {channel_id}: {e}")
         except Exception as e:
-            LOGGER.error(f"{e} for {channel_id}")
+            LOGGER.warning(f"Force-sub membership check failed for {channel_id}: {e}")
         return None
 
-    results = await gather(*[_check_channel(cid) for cid in ids.split()])
+    results = await gather(*[_check_channel(cid) for cid in channel_ids])
     for result in results:
         if result:
             title, link = result

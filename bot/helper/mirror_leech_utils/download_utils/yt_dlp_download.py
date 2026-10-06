@@ -140,7 +140,10 @@ def probe_youtube(link, options):
             opts.pop("cookiefile", None)
         plog = ProbeLogger()
         opts.update(
-            logger=plog, verbose=True, ignore_no_formats_error=True, quiet=False
+            logger=plog, verbose=False, ignore_no_formats_error=True, quiet=True,
+            noplaylist=False, playlist_items="1",
+            retries=8, fragment_retries=8, file_access_retries=3,
+            concurrent_fragment_downloads=8, continuedl=True,
         )
         outcome = ""
         try:
@@ -252,14 +255,17 @@ class YoutubeDLHelper:
             "ffmpeg_location": f"/bin/{BinConfig.FFMPEG_NAME}",
             "extractor_args": YT_EXTRACTOR_ARGS,
             **get_yt_js_options(),
-            "fragment_retries": 10,
-            "retries": 10,
+            "fragment_retries": 8,
+            "retries": 8,
             "retry_sleep_functions": {
                 "http": lambda n: 3,
                 "fragment": lambda n: 3,
                 "file_access": lambda n: 3,
                 "extractor": lambda n: 3,
             },
+            "file_access_retries": 3,
+            "concurrent_fragment_downloads": 16,
+            "continuedl": True,
         }
         cookie_to_use = get_cookie_file(self._listener.user_dict)
         yt_cfg = getattr(self._listener, "yt_cfg", None)
