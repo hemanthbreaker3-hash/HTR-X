@@ -98,8 +98,22 @@ async def stop_duplicate_check(listener):
     return False, None
 
 
+def _effective_all_task_limit():
+    """Return the active global task cap; 0 means unlimited.
+
+    BOT_MAX_TASKS and QUEUE_ALL are both global concurrency controls.  The
+    smaller positive value wins so one setting cannot silently bypass the other.
+    """
+    limits = [
+        value
+        for value in (safe_int(Config.BOT_MAX_TASKS), safe_int(Config.QUEUE_ALL))
+        if value > 0
+    ]
+    return min(limits) if limits else 0
+
+
 async def check_running_tasks(listener, state="dl"):
-    all_limit = safe_int(Config.QUEUE_ALL)
+    all_limit = _effective_all_task_limit()
     state_limit = (
         safe_int(Config.QUEUE_DOWNLOAD)
         if state == "dl"
@@ -183,7 +197,7 @@ async def _can_start_user_task(mid):
 
 
 async def start_from_queued():
-    if all_limit := safe_int(Config.QUEUE_ALL):
+    if all_limit := _effective_all_task_limit():
         dl_limit = safe_int(Config.QUEUE_DOWNLOAD)
         up_limit = safe_int(Config.QUEUE_UPLOAD)
         async with queue_dict_lock:
@@ -370,13 +384,9 @@ async def pre_task_check(message):
             f"┠ <b>Waiting Time</b> → {get_readable_time(ut)}\n┠ <i>User's Time Interval Restrictions</i> → {get_readable_time(uti)}"
         )
 
-    all_tasks = list(task_dict.values())
-    all_tasks_len = len(all_tasks)
-    bmax_tasks = safe_int(user_dict.get("bmax_tasks", Config.BOT_MAX_TASKS))
-    if bmax_tasks > 0 and all_tasks_len >= bmax_tasks:
-        msg.append(
-            f"┠ Max Concurrent Bot's Tasks Limit exceeded.\n┃ Bot Tasks Limit : {bmax_tasks} task"
-        )
+    # Do not hard-block a command because the global task cap is reached.
+    # check_running_tasks() will place the task in the normal download/upload
+    # queue and start it automatically when a slot is released.
 
     if msg:
         return _format_result()

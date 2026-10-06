@@ -46,16 +46,26 @@ def _qbit_password():
     )
 
 
-async def _connect_aria2(retries=5, delay=2):
+async def _connect_aria2(retries=8, delay=2):
     from aioaria2.exceptions import Aria2rpcException
 
+    last_error = None
     for i in range(retries):
         try:
-            return await Aria2WebsocketClient.new("http://localhost:6800/jsonrpc")
-        except Aria2rpcException:
-            if i == retries - 1:
-                raise
-            await sleep(delay)
+            client = await Aria2WebsocketClient.new("http://127.0.0.1:6800/jsonrpc")
+            # A successful TCP/WebSocket handshake is not enough; verify the
+            # JSON-RPC endpoint before handing the client to the rest of the bot.
+            await client.getVersion()
+            return client
+        except (Aria2rpcException, ClientError, TimeoutError, OSError) as e:
+            last_error = e
+            if i < retries - 1:
+                await sleep(delay)
+        except Exception as e:
+            last_error = e
+            if i < retries - 1:
+                await sleep(delay)
+    raise RuntimeError(f"Unable to connect to aria2 RPC on 127.0.0.1:6800: {last_error}")
 
 
 class TorrentManager:
