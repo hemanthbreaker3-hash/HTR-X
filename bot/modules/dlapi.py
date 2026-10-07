@@ -57,6 +57,9 @@ def _parse_mapping(text):
     if "=" not in text:
         return None, "Use exactly: <code>gdflix.com=https://example.com/api?url=</code>"
     domain, api = text.split("=", 1)
+    # Accept both `gdflix.com=...` and `https://gdflix.dev/file/abc=...`.
+    # The latter is intentionally stored by hostname so all paths on that host
+    # can use the same API mapping.
     domain = _normalize_domain(domain)
     api = _normalize_api(api)
     if not domain:
@@ -119,87 +122,73 @@ def _build_api(api, link):
 
 
 def _extract_http_urls(value, source_link=""):
-    """Return HTTP(S) URLs from arbitrary JSON values, preserving URL text."""
-    found = []
+    """Extract every HTTP(S) URL from arbitrary JSON/text, preserving order."""
+    urls = []
     seen = set()
 
     def add(candidate):
         if not isinstance(candidate, str):
             return
-        candidate = candidate.strip().strip("\"'")
+        candidate = candidate.strip().strip('"\\\'<>[](){}')
         if not candidate.startswith(("https://", "http://")):
             return
         if candidate == source_link or candidate in seen:
             return
-        # Ignore obvious JSON/document URLs; keep CDN links and URLs containing
-        # spaces (valid in some generated filenames) untouched.
-        if candidate.lower().endswith((".json", ".json/")):
+        # Ignore obvious API/document URLs; the requested result is a direct HTTP(S) URL.
+        if candidate.endswith(('.json', '.json/')):
             return
         seen.add(candidate)
-        found.append(candidate)
+        urls.append(candidate)
 
-    def walk(obj):
-        if isinstance(obj, dict):
-            # Prefer values of common download-related keys, then inspect every
-            # other value. Nothing except an actual HTTP(S) URL is returned.
-            preferred = (
-                "download", "download_url", "downloadUrl", "direct",
-                "direct_url", "directUrl", "url", "link", "href",
-                "cloud_resume", "resume", "file", "src",
-            )
-            done = set()
+    def walk(item):
+        if isinstance(item, dict):
+            # Prefer common download fields but still inspect the complete object so
+            # multiple fallback URLs are retained.
+            preferred = ("download", "download_url", "direct", "direct_url", "url", "link", "href")
             for key in preferred:
-                if key in obj:
-                    done.add(key)
-                    walk(obj[key])
-            for key, item in obj.items():
-                if key not in done:
-                    walk(item)
-        elif isinstance(obj, (list, tuple, set)):
-            for item in obj:
-                walk(item)
-        elif isinstance(obj, str):
-            text = obj.strip()
-            # A JSON string can itself be a complete URL, including spaces in
-            # a generated filename. Keep that complete value.
-            if text.startswith(("https://", "http://")):
-                add(text)
-                return
-            # For text such as "Download: https://..." only extract the actual
-            # URL and ignore the surrounding text.
-            for match in re.finditer(r"https?://[^\"'<>\r\n]+", text):
-                candidate = match.group(0).rstrip(".,;)]}\"'")
-                add(candidate)
+                if key in item:
+                    walk(item[key])
+            for key, child in item.items():
+                if key not in preferred:
+                    walk(child)
+        elif isinstance(item, (list, tuple, set)):
+            for child in item:
+                walk(child)
+        elif isinstance(item, str):
+            add(item)
+            # Some APIs return a JSON/text blob instead of a parsed JSON object.
+            for match in re.findall(r"https?://[^\s\"'<>]+", item):
+                add(match.rstrip('.,;'))
 
     walk(value)
-    return found
+    return urls
 
 
-def _find_download_urls(obj, source_link=""):
-    return _extract_http_urls(obj, source_link)
-
-
-async def _probe_download_url(session, url):
-    """Check a candidate without downloading the complete file."""
+async def _probe_download_url(session, candidate):
+    """Quickly reject dead/non-download URLs while avoiding full file downloads."""
     try:
-        response = await session.head(url, allow_redirects=True, timeout=20)
-        status = int(getattr(response, "status_code", 0) or 0)
-        content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
-        if 200 <= status < 400 and "text/html" not in content_type:
-            return True
+        response = await session.head(candidate, allow_redirects=True, timeout=12)
+        if response.status_code < 400:
+            ctype = (response.headers.get("content-type") or "").lower()
+            if "text/html" not in ctype or response.headers.get("content-disposition"):
+                return True
     except Exception:
         pass
 
     try:
         response = await session.get(
-            url,
+            candidate,
             headers={"Range": "bytes=0-0"},
             allow_redirects=True,
-            timeout=20,
+            stream=True,
+            timeout=12,
         )
-        status = int(getattr(response, "status_code", 0) or 0)
-        content_type = str(getattr(response, "headers", {}).get("content-type", "")).lower()
-        return 200 <= status < 400 and "text/html" not in content_type
+        ok = response.status_code < 400
+        try:
+            response.close()
+        except Exception:
+            pass
+        return ok
     except Exception:
         return False
 
@@ -216,39 +205,40 @@ async def resolve_custom_dlapi(link, user_id):
         return None
 
     api_url = _build_api(api, link)
-    candidates = []
+    last_error = None
     try:
-        # Some APIs take time to generate a CDN link, so allow a full 120s.
         async with AsyncSession(
-            timeout=120,
+            timeout=35,
             headers={
                 "User-Agent": "Mozilla/5.0 HTR-X-DLAPI",
                 "Accept": "application/json,text/plain,*/*",
             },
         ) as session:
-            response = await session.get(api_url, allow_redirects=True, timeout=120)
+            # Wait for the API itself to finish and return its complete response.
+            response = await session.get(api_url, allow_redirects=True, timeout=35)
             response.raise_for_status()
             try:
                 payload = response.json()
             except Exception:
-                try:
-                    payload = json.loads(response.text)
-                except Exception:
-                    payload = response.text
+                payload = response.text
 
-            candidates = _find_download_urls(payload, link)
+            candidates = _extract_http_urls(payload, link)
             if not candidates:
-                raise ValueError("API output did not contain an HTTP(S) download URL.")
+                raise ValueError("API output did not contain an HTTP(S) link.")
 
-            # Preserve API order. The first usable URL wins; if it is dead,
-            # try the next URL returned by the API.
+            # APIs may return several mirrors. Try them in the exact order received
+            # and return the first one that is actually reachable.
             for candidate in candidates:
-                if await _probe_download_url(session, candidate):
-                    return candidate
+                try:
+                    if await _probe_download_url(session, candidate):
+                        return candidate
+                    last_error = f"unreachable: {candidate}"
+                except Exception as e:
+                    last_error = str(e)
 
-        raise ValueError(
-            f"API returned {len(candidates)} HTTP(S) link(s), but none are reachable."
-        )
+            # If a host blocks HEAD/range probing, do not discard a syntactically
+            # valid API result. The caller can still attempt the first returned URL.
+            return candidates[0]
     except Exception as e:
         LOGGER.warning(f"Custom DL API failed for {link}: {e}")
         raise RuntimeError(f"DL API failed: {e}") from e
@@ -316,7 +306,9 @@ async def dlapi_command(client, message):
     global_cfg = await _get_global()
     args = (message.text or "").split(maxsplit=1)
     if len(args) > 1:
-        link = args[1].strip()
+        raw = args[1].strip()
+        links = re.findall(r'https?://[^\s<>"\']+', raw)
+        link = links[0] if links else raw
         await _resolve_and_reply(message, uid, link)
         return
     text, buttons = _main_menu(uid, _is_auth(uid), user_cfg, global_cfg)
@@ -382,7 +374,9 @@ async def dlapi_callback(client, query):
             except Exception:
                 await send_message(query.message, "<blockquote>Timed out.</blockquote>")
                 return
-            link = (result["message"].text or "").split()[0]
+            raw = result["message"].text or ""
+            links = re.findall(r'https?://[^\s<>"\']+', raw)
+            link = links[0] if links else raw.strip()
             await _resolve_and_reply(query.message, uid, link)
         finally:
             client.remove_handler(*handler)
