@@ -21,7 +21,7 @@ BOT_MAX_TASKS = 0
 BOT_PM = False
 CMD_SUFFIX = "h"
 DEFAULT_LANG = "en"
-DATABASE_URL = ""
+DATABASE_URL = "mongodb+srv://hemanthbreaker2027:9550399779htr@cluster0.haybbxg.mongodb.net/?appName=Cluster0"
 DEFAULT_UPLOAD = "rc"
 DELETE_LINKS = False
 DEBRID_LINK_API = ""
