@@ -663,7 +663,15 @@ class Mirror(TaskListener):
                 or re_match(r"text/html|text/plain", content_type)
             ):
                 try:
-                    self.link = await sync_to_async(direct_link_generator, self.link)
+                    # User/global Download API overrides: if the source host has a configured
+                    # API, resolve it first and then continue through the normal downloader.
+                    from .dlapi import resolve_dlapi
+                    dlapi_link = await resolve_dlapi(self.link, self.user_id)
+                    if dlapi_link:
+                        self.link = dlapi_link
+                        LOGGER.info(f"DLAPI generated link: {self.link}")
+                    else:
+                        self.link = await sync_to_async(direct_link_generator, self.link)
                     if isinstance(self.link, tuple):
                         self.link, headers = self.link
                     elif isinstance(self.link, str):

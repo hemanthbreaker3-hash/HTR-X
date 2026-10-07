@@ -476,6 +476,20 @@ async def add_handlers():
         )
     )
     TgClient.bot.add_handler(
+        MessageHandler(
+            dlapi_command,
+            filters=command(BotCommands.DlapiCommand, case_sensitive=True),
+        )
+    )
+    TgClient.bot.add_handler(
+        MessageHandler(
+            dlapi_command,
+            filters=command(BotCommands.DapiCommand, case_sensitive=True)
+            & CustomFilters.sudo,
+        )
+    )
+    TgClient.bot.add_handler(CallbackQueryHandler(dlapi_callback, filters=regex("^dlapi")))
+    TgClient.bot.add_handler(
         CallbackQueryHandler(taskm_callback, filters=regex("^taskm"))
     )
     TgClient.bot.add_handler(
