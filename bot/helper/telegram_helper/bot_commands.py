@@ -64,7 +64,7 @@ class BotCommands:
         "RequestFF": ["requestff", "reqff"],
         "TaskM": ["taskm", "tm"],
         "TaskUser": ["taskuser", "tu"],
-        "Dlapi": "dlapi",
+        "DlApi": "dlapi",
         "Dapi": "dapi",
     }
 

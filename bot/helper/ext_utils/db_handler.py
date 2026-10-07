@@ -348,6 +348,23 @@ class DbManager:
             return
         await self.db.playlists[_part()].delete_one({"_id": token})
 
+    async def get_dlapi_global(self):
+        if self._return:
+            return {}
+        doc = await self.db.settings.dlapi.find_one({"_id": _part()})
+        if not doc:
+            return {}
+        return doc.get("configs") or {}
+
+    async def set_dlapi_global(self, configs):
+        if self._return:
+            return
+        await self.db.settings.dlapi.update_one(
+            {"_id": _part()},
+            {"$set": {"configs": dict(configs or {})}},
+            upsert=True,
+        )
+
     async def save_plugin(self, name, state):
         if self._return:
             return

@@ -50,6 +50,7 @@ from ..helper.mirror_leech_utils.download_utils.direct_downloader import (
 from ..helper.mirror_leech_utils.download_utils.direct_link_generator import (
     direct_link_generator,
 )
+from .dlapi import resolve_custom_dlapi
 from ..helper.mirror_leech_utils.download_utils.gd_download import add_gd_download
 from ..helper.mirror_leech_utils.download_utils.jd_download import add_jd_download
 from ..helper.mirror_leech_utils.download_utils.mega_download import add_mega_download
@@ -658,20 +659,27 @@ class Mirror(TaskListener):
                     await delete_links(self.message)
                     return
 
+            if isinstance(self.link, str):
+                try:
+                    custom_link = await resolve_custom_dlapi(
+                        self.link,
+                        self.message.from_user.id if self.message.from_user else 0,
+                    )
+                    if custom_link:
+                        self.link = custom_link
+                        LOGGER.info(f"Custom DL API generated link: {self.link}")
+                except RuntimeError as e:
+                    await send_message(self.message, f"<blockquote>{e}</blockquote>")
+                    await self.remove_from_same_dir()
+                    await delete_links(self.message)
+                    return
+
             if isinstance(self.link, str) and (
                 (content_type := await get_content_type(self.link)) is None
                 or re_match(r"text/html|text/plain", content_type)
             ):
                 try:
-                    # User/global Download API overrides: if the source host has a configured
-                    # API, resolve it first and then continue through the normal downloader.
-                    from .dlapi import resolve_dlapi
-                    dlapi_link = await resolve_dlapi(self.link, self.user_id)
-                    if dlapi_link:
-                        self.link = dlapi_link
-                        LOGGER.info(f"DLAPI generated link: {self.link}")
-                    else:
-                        self.link = await sync_to_async(direct_link_generator, self.link)
+                    self.link = await sync_to_async(direct_link_generator, self.link)
                     if isinstance(self.link, tuple):
                         self.link, headers = self.link
                     elif isinstance(self.link, str):
