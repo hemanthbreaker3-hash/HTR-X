@@ -2284,12 +2284,20 @@ async def event_handler(client, query, pfunc, rfunc, photo=False, document=False
     start_time = update_time = time()
 
     async def event_filter(_, __, event):
+        # Ignore messages as soon as the waiting state is cancelled.
+        # This prevents stale upload listeners from replying later.
+        if not handler_dict.get(user_id, False):
+            return False
+
         user = event.from_user or event.sender_chat
         if not user or user.id != user_id or event.chat.id != query.message.chat.id:
             return False
         if photo:
-            mtype = event.photo or event.document or (event.text and event.text.startswith(("http://", "https://")))
+            mtype = event.photo or event.document or (
+                event.text and event.text.startswith(("http://", "https://"))
+            )
         elif document:
+            # File settings (including USER_COOKIE_FILE) accept documents only.
             mtype = event.document
         else:
             mtype = event.text
@@ -2674,6 +2682,9 @@ The session string is a private login credential and is never shown back.</block
         rfunc = partial(update_user_settings, query, stype="advanced")
         await event_handler(client, query, _save_session, rfunc)
     elif data[2] == "menu":
+        # Cancel any active upload/input listener before navigating back.
+        handler_dict[user_id] = False
+
         if data[3] == "FFMPEG_CMDS" and not Config.ENABLE_FFMPEG_CMDS:
             return await query.answer("FFmpeg CMDs preset option is blocked/disabled by Bot Owner!", show_alert=True)
         if data[3].startswith("ENC_") and not Config.ENABLE_ENCODE:
@@ -3026,6 +3037,8 @@ The session string is a private login credential and is never shown back.</block
         await update_user_settings(query, stype="general")
         await database.update_user_data(user_id)
     elif data[2] == "back":
+        # Stop any pending message/file listener when leaving the menu.
+        handler_dict[user_id] = False
         await query.answer()
         stype = data[3] if len(data) == 4 else "main"
         await update_user_settings(query, stype)
