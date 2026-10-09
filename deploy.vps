@@ -9,7 +9,8 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-APP_DIR=$(pwd)
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$APP_DIR"
 SERVICE_NAME="cantarellabots_bot"
 
 echo "[1/6] Updating system and installing system dependencies..."
@@ -70,7 +71,31 @@ export CANTARELLABOTS_MEGA_SDK_VERSION="10.20.20"
 mkdir -p downloads thumbnails tokens rclone cookies Images configs/sabnzbd
 chmod +x start.sh setpkgs.sh tunnel.sh cron_boot.py 2>/dev/null || true
 
-echo "[4/6] Configuring systemd service..."
+echo "[4/6] Validating Python configuration..."
+if [ ! -f "$APP_DIR/config.py" ]; then
+  echo "ERROR: $APP_DIR/config.py is missing. Add your config.py before deployment."
+  exit 1
+fi
+"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/config.py" || {
+  echo "ERROR: config.py contains a syntax error. Fix it before deploying."
+  exit 1
+}
+"$APP_DIR/venv/bin/python" - <<'PY'
+import config
+required = ("BOT_TOKEN", "OWNER_ID", "TELEGRAM_API", "TELEGRAM_HASH")
+missing = [k for k in required if not hasattr(config, k) or getattr(config, k) in (None, "")]
+if missing:
+    raise SystemExit("ERROR: Missing config values: " + ", ".join(missing))
+if config.BOT_TOKEN == "PUT_YOUR_BOT_TOKEN_HERE":
+    raise SystemExit("ERROR: Set your real BOT_TOKEN in config.py before deployment")
+if config.TELEGRAM_HASH == "PUT_YOUR_TELEGRAM_API_HASH_HERE":
+    raise SystemExit("ERROR: Set your real TELEGRAM_HASH in config.py before deployment")
+if not isinstance(config.OWNER_ID, int) or not isinstance(config.TELEGRAM_API, int) or config.TELEGRAM_API <= 0:
+    raise SystemExit("ERROR: OWNER_ID and TELEGRAM_API must be valid integers")
+print("Configuration validation passed.")
+PY
+
+echo "[5/6] Configuring systemd service..."
 cat <<EOF > /etc/systemd/system/${SERVICE_NAME}.service
 [Unit]
 Description=CANTARELLABOTS Mirror Leech Bot Service
@@ -99,7 +124,14 @@ systemctl enable ${SERVICE_NAME}.service
 echo "[6/6] Starting application service..."
 systemctl restart ${SERVICE_NAME}.service
 
-echo "=== VPS Deployment Complete! ==="
+sleep 5
+if ! systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  echo "ERROR: Service did not remain active. Recent logs:"
+  journalctl -u "${SERVICE_NAME}.service" -n 60 --no-pager || true
+  exit 1
+fi
+
+echo "=== VPS Deployment Complete: service is active ==="
 echo "Service Name: ${SERVICE_NAME}"
 echo "Status Check: systemctl status ${SERVICE_NAME}"
 echo "View Logs:    journalctl -u ${SERVICE_NAME} -f"
