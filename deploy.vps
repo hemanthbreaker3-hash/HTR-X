@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
-set -e
+set -Eeuo pipefail
 
-echo "=== Starting Full VPS Deployment for Mirror-Leech Bot ==="
+# Resolve the repository directory even when this script is launched elsewhere.
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$APP_DIR"
+
+log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+fail() { local rc=$?; echo "[ERROR] Deployment failed at line ${BASH_LINENO[0]} (exit ${rc})." >&2; exit "$rc"; }
+trap fail ERR
+
+if [[ -z "${SERVICE_NAME:-}" ]]; then
+  SERVICE_NAME="cantarellabots_bot"
+fi
+
+echo "=== Starting VPS Deployment for Mirror-Leech Bot ==="
 
 # Check root privileges
 if [ "$EUID" -ne 0 ]; then
@@ -9,10 +21,7 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-APP_DIR=$(pwd)
-SERVICE_NAME="cantarellabots_bot"
-
-echo "[1/6] Updating system and installing system dependencies..."
+log "[1/6] Updating system and installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
@@ -36,6 +45,8 @@ apt-get install -y -qq \
     curl \
     wget \
     nodejs \
+    ca-certificates \
+    xz-utils \
     lsof \
     procps \
     cpulimit \
@@ -52,7 +63,15 @@ apt-get install -y -qq \
     libc-ares-dev \
     libfreeimage-dev
 
-echo "[2/6] Setting up Python virtual environment..."
+# YouTube extraction needs a supported JavaScript runtime. Ubuntu's Node.js
+# package can be too old for yt-dlp, so install Deno if it is missing.
+if ! command -v deno >/dev/null 2>&1; then
+    log "Installing Deno JavaScript runtime for yt-dlp..."
+    curl -fsSL https://deno.land/install.sh | sh
+    install -m 0755 /root/.deno/bin/deno /usr/local/bin/deno
+fi
+
+log "[2/6] Setting up Python virtual environment..."
 if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
@@ -61,20 +80,29 @@ source venv/bin/activate
 pip install --upgrade pip -q
 pip install wzgram
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt -q
-    pip install --no-deps "mega.py>=1.0.8" -q
+    pip install -r requirements.txt
+else
+    echo "[ERROR] requirements.txt is missing in $APP_DIR" >&2
+    exit 1
 fi
+# Keep yt-dlp and its JS challenge solver aligned with the active venv.
+pip install --upgrade "yt-dlp[default]" "yt-dlp-ejs"
 
-echo "[3/6] Preparing CANTARELLABOTS runtime, MegaSDK target, directories and permissions..."
+log "[3/6] Preparing CANTARELLABOTS runtime, MegaSDK target, directories and permissions..."
 export CANTARELLABOTS_MEGA_SDK_VERSION="10.20.20"
 mkdir -p downloads thumbnails tokens rclone cookies Images configs/sabnzbd
-chmod +x start.sh setpkgs.sh tunnel.sh cron_boot.py 2>/dev/null || true
+chmod +x start.sh setpkgs.sh tunnel.sh cron_boot.py deploy.vps 2>/dev/null || true
+if [[ ! -f "$APP_DIR/start.sh" ]]; then
+    echo "[ERROR] start.sh is missing in $APP_DIR" >&2
+    exit 1
+fi
 
-echo "[4/6] Configuring systemd service..."
+log "[4/6] Configuring systemd service..."
 cat <<EOF > /etc/systemd/system/${SERVICE_NAME}.service
 [Unit]
 Description=CANTARELLABOTS Mirror Leech Bot Service
-After=network.target
+Wants=network-online.target
+After=network-online.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -85,6 +113,8 @@ WorkingDirectory=$APP_DIR
 ExecStart=/bin/bash $APP_DIR/start.sh
 Restart=always
 RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGINT
 Environment="PATH=$APP_DIR/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
 
@@ -92,12 +122,14 @@ Environment="PYTHONUNBUFFERED=1"
 WantedBy=multi-user.target
 EOF
 
-echo "[5/6] Reloading systemd daemon and enabling service..."
+log "[5/6] Reloading systemd daemon and enabling service..."
 systemctl daemon-reload
 systemctl enable ${SERVICE_NAME}.service
 
-echo "[6/6] Starting application service..."
+log "[6/6] Starting application service..."
 systemctl restart ${SERVICE_NAME}.service
+
+systemctl --no-pager --full status "${SERVICE_NAME}.service" || true
 
 echo "=== VPS Deployment Complete! ==="
 echo "Service Name: ${SERVICE_NAME}"

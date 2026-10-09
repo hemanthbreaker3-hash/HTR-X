@@ -15,6 +15,7 @@ from .tg_client import TgClient
 
 
 async def add_handlers():
+    register_dapi_handlers()
     TgClient.bot.add_handler(
         MessageHandler(
             authorize,

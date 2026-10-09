@@ -1,4 +1,7 @@
-from asyncio import gather, sleep
+from asyncio import Event, gather, sleep
+from re import search as re_search
+from pyrogram import filters
+from pyrogram.handlers import CallbackQueryHandler
 from html import escape
 from time import time
 from mimetypes import guess_type
@@ -22,6 +25,7 @@ from ... import (
     queue_dict_lock,
     same_directory_lock,
     DOWNLOAD_DIR,
+    user_data,
 )
 from ...modules.metadata import apply_metadata_title
 from ..common import TaskConfig
@@ -68,6 +72,54 @@ from ..telegram_helper.message_utils import (
 )
 
 
+_SLOW_SPEED_LIMIT = 500 * 1024  # 500 KiB/s
+_SLOW_SPEED_WINDOW = 120
+
+def _speed_bytes_per_second(status):
+    """Convert a status speed string such as ``1.2 MB/s`` to bytes/sec."""
+    try:
+        raw = str(status.speed()).strip().upper().replace("/S", "")
+        match = re_search(r"([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?I?B)", raw)
+        if not match:
+            return 0
+        amount = float(match.group(1))
+        unit = match.group(2)
+        factor = 1024 if "I" in unit or unit.startswith(("K", "M", "G", "T")) else 1
+        power = {"B": 0, "KB": 1, "KIB": 1, "MB": 2, "MIB": 2, "GB": 3, "GIB": 3, "TB": 4, "TIB": 4}.get(unit, 0)
+        return int(amount * (factor ** power))
+    except Exception:
+        return 0
+
+
+async def _slow_speed_callback(client, query, listener, event, handler):
+    try:
+        parts = query.data.split()
+        auth_ids = {int(Config.OWNER_ID)} if Config.OWNER_ID else set()
+        auth_ids.update(int(uid) for uid, data in user_data.items() if data.get("SUDO"))
+        if len(parts) != 3 or int(parts[1]) != listener.mid or query.from_user.id not in auth_ids:
+            await query.answer("Only the bot owner or sudo users can decide this.", show_alert=True)
+            return
+        if parts[2] == "cancel":
+            async with task_dict_lock:
+                status = task_dict.get(listener.mid)
+            if status:
+                await status.task().cancel_task()
+            await query.answer("Task cancellation requested.")
+            with suppress(Exception):
+                await query.message.edit_text("🛑 Slow download cancelled by you.")
+        else:
+            await query.answer("Task will continue.")
+            with suppress(Exception):
+                await query.message.edit_text("✅ Task kept running. Speed monitoring dismissed.")
+    except Exception as exc:
+        LOGGER.debug("Slow-speed decision callback failed: %s", exc)
+    finally:
+        event.set()
+        with suppress(Exception):
+            client.remove_handler(*handler)
+
+
+
 class TaskListener(TaskConfig):
     def __init__(self):
         super().__init__()
@@ -97,7 +149,79 @@ class TaskListener(TaskConfig):
                 self.same_dir[self.folder_name]["tasks"].remove(self.mid)
                 self.same_dir[self.folder_name]["total"] -= 1
 
+    async def _watch_slow_download(self):
+        """Prompt the task owner after 2 continuous minutes below 500 KiB/s."""
+        low_since = None
+        try:
+            while not getattr(self, "is_cancelled", False):
+                await sleep(10)
+                async with task_dict_lock:
+                    status = task_dict.get(self.mid)
+                if status is None:
+                    return
+                try:
+                    current_status = status.status()
+                    if hasattr(current_status, "__await__"):
+                        current_status = await current_status
+                    if current_status != "Downloading":
+                        low_since = None
+                        continue
+                    speed = _speed_bytes_per_second(status)
+                except Exception:
+                    continue
+                if speed >= _SLOW_SPEED_LIMIT:
+                    low_since = None
+                    continue
+                if low_since is None:
+                    low_since = time()
+                    continue
+                if time() - low_since < _SLOW_SPEED_WINDOW:
+                    continue
+
+                buttons = ButtonMaker()
+                buttons.data_button("✅ Accept — Cancel task", f"slowdl {self.mid} cancel", style=ButtonStyle.DANGER)
+                buttons.data_button("❌ Reject — Keep task", f"slowdl {self.mid} keep", style=ButtonStyle.SUCCESS)
+                prompt = (
+                    "<b>⚠️ Slow download detected</b>\n\n"
+                    f"<blockquote>Speed has stayed below <b>500 KiB/s</b> for 2 minutes.\n"
+                    f"Task: <code>{self.mid}</code>\n"
+                    "Choose whether to cancel or keep this task.</blockquote>"
+                )
+                auth_ids = {int(Config.OWNER_ID)} if Config.OWNER_ID else set()
+                auth_ids.update(int(uid) for uid, data in user_data.items() if data.get("SUDO"))
+                if not auth_ids:
+                    LOGGER.warning("No owner/sudo recipients available for slow-speed alert on task %s", self.mid)
+                    return
+                delivered = False
+                for auth_id in auth_ids:
+                    try:
+                        await send_message(auth_id, prompt, buttons.build_menu(2))
+                        delivered = True
+                    except Exception as exc:
+                        LOGGER.debug("Could not send slow-speed prompt to auth user %s: %s", auth_id, exc)
+                if not delivered:
+                    return
+
+                event = Event()
+                callback = lambda client, query: _slow_speed_callback(client, query, self, event, handler)
+                handler = TgClient.bot.add_handler(
+                    CallbackQueryHandler(callback, filters.regex(rf"^slowdl {self.mid} (?:cancel|keep)$")),
+                    group=-1,
+                )
+                try:
+                    await event.wait()
+                finally:
+                    with suppress(Exception):
+                        TgClient.bot.remove_handler(*handler)
+                return
+        except Exception as exc:
+            LOGGER.debug("Slow-speed watchdog ended for task %s: %s", self.mid, exc)
+
     async def on_download_start(self):
+        # Start a per-task speed watchdog once the downloader has registered its status.
+        if not getattr(self, "_slow_speed_watch_started", False):
+            self._slow_speed_watch_started = True
+            bot_loop.create_task(self._watch_slow_download())
         mode_name = "Leech" if self.is_leech else "Mirror"
         if self.bot_pm and self.is_super_chat:
             self.pm_msg = await send_message(

@@ -413,8 +413,11 @@ class YoutubeDLHelper:
                     self._send_formats_table()
                 return self._on_download_error(str(e))
             if self.is_playlist:
-                self.playlist_count = result.get("playlist_count", 0)
-            if "entries" in result:
+                self.playlist_count = result.get("playlist_count") or result.get("n_entries") or 0
+                # Reset aggregate size for retries; otherwise estimates accumulate and
+                # progress can stall below 100% after a playlist retry.
+                self._listener.size = 0
+            if result.get("entries") is not None:
                 for entry in result["entries"]:
                     if not entry:
                         continue
@@ -473,7 +476,11 @@ class YoutubeDLHelper:
 
     async def add_download(self, path, qual, playlist, options):
         if playlist:
+            # Continue past unavailable/deleted/private entries instead of aborting
+            # the entire playlist, and process entries sequentially for stability.
             self.opts["ignoreerrors"] = True
+            self.opts["skip_unavailable_fragments"] = True
+            self.opts["noprogress"] = False
             self.is_playlist = True
 
         self._gid = token_hex(5)
