@@ -76,6 +76,7 @@ async def update_aria2_options():
         "disk-cache": "128M",
         "max-file-not-found": "0",
         "stream-piece-selector": "geom",
+        "file-allocation": "none",
     }
     if not aria2_options:
         op = await TorrentManager.aria2.getGlobalOption()

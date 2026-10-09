@@ -7,7 +7,7 @@ WORKDIR /usr/src/app
 
 COPY requirements.txt .
 RUN uv pip install --python /wzvenv/bin/python --no-cache-dir -r requirements.txt
-ENV HTRX_MEGA_SDK_VERSION=10.20.20
+ENV CANTARELLABOTS_MEGA_SDK_VERSION=10.20.20
 RUN uv pip install --python /wzvenv/bin/python --no-cache-dir --no-deps "mega.py>=1.0.8"
 
 COPY . .

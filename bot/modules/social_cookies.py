@@ -65,6 +65,13 @@ async def _render(message, user_id):
 
 async def _wait_for_cookie(client, query, user_id, platform):
     chat_id = query.message.chat.id
+
+    if user_id in _cookie_handlers:
+        old_item = _cookie_handlers.pop(user_id, None)
+        if old_item and old_item[0]:
+            with suppress(Exception):
+                client.remove_handler(*old_item[0])
+
     prompt = await edit_message(
         query.message,
         f"<b>🍪 {SOCIAL_COOKIE_PLATFORMS[platform][0]} Cookies</b>\n\n"
@@ -74,16 +81,44 @@ async def _wait_for_cookie(client, query, user_id, platform):
         InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"scookie cancel {platform}")]]),
     )
 
+    async def cookie_filter(_, __, event):
+        u = event.from_user or event.sender_chat
+        if not u or u.id != user_id or event.chat.id != chat_id:
+            return False
+        # If user runs any bot command, immediately abort cookie prompt and pass through
+        if event.text and event.text.startswith("/"):
+            _cookie_handlers.pop(user_id, None)
+            with suppress(Exception):
+                client.remove_handler(*handler)
+            return False
+        # Only catch document uploads or explicit cancel text
+        if event.document:
+            return True
+        if event.text and event.text.lower().strip() in ("cancel", "close", "stop", "back"):
+            return True
+        return False
+
     async def pfunc(_, msg):
         if msg.chat.id != chat_id or not msg.from_user or msg.from_user.id != user_id:
             return
-        if not msg.document:
-            await msg.reply("❌ Please send the cookie file as a document.")
+
+        if msg.text and msg.text.lower().strip() in ("cancel", "close", "stop", "back"):
+            _cookie_handlers.pop(user_id, None)
+            with suppress(Exception):
+                client.remove_handler(*handler)
+            await send_message(msg, "❌ Cookie upload cancelled.")
+            with suppress(Exception):
+                await _render(query.message, user_id)
             return
+
+        if not msg.document:
+            return
+
         name = (msg.document.file_name or "").lower()
         if not (name.endswith(".txt") or "cookie" in name):
-            await msg.reply("❌ Please send a Netscape cookies.txt file.")
+            await send_message(msg, "❌ Please send a Netscape cookies.txt file.")
             return
+
         path = social_cookie_path(user_id, platform)
         try:
             await msg.download(file_name=path)
@@ -92,7 +127,8 @@ async def _wait_for_cookie(client, query, user_id, platform):
                 with suppress(Exception):
                     import os
                     os.remove(path)
-                await msg.reply(
+                await send_message(
+                    msg,
                     "❌ Cookies were not saved.\n"
                     f"{describe_cookie_report(report)}"
                 )
@@ -102,39 +138,52 @@ async def _wait_for_cookie(client, query, user_id, platform):
                     platform: path,
                 })
                 await database.update_user_data(user_id)
-                await msg.reply(
+                await send_message(
+                    msg,
                     f"✅ <b>{SOCIAL_COOKIE_PLATFORMS[platform][0]} cookies saved.</b>\n"
                     f"{describe_cookie_report(report)}"
                 )
         except Exception as e:
-            await msg.reply(f"❌ Failed to save cookies: {e}")
+            await send_message(msg, f"❌ Failed to save cookies: {e}")
         finally:
             _cookie_handlers.pop(user_id, None)
             with suppress(Exception):
                 client.remove_handler(*handler)
-            await _render(query.message, user_id)
+            with suppress(Exception):
+                await _render(query.message, user_id)
 
     handler = client.add_handler(
         MessageHandler(
             pfunc,
-            filters=filters.create(lambda _, __, m: True),
+            filters=filters.create(cookie_filter),
         ),
         group=-2,
     )
     _cookie_handlers[user_id] = (handler, platform)
-    for _ in range(120):
-        if user_id not in _cookie_handlers:
-            return
-        await sleep(0.5)
-    _cookie_handlers.pop(user_id, None)
-    with suppress(Exception):
-        client.remove_handler(*handler)
-    await _render(query.message, user_id)
+
+    try:
+        for _ in range(120):
+            if user_id not in _cookie_handlers:
+                break
+            await sleep(0.5)
+    finally:
+        _cookie_handlers.pop(user_id, None)
+        with suppress(Exception):
+            client.remove_handler(*handler)
+        with suppress(Exception):
+            await _render(query.message, user_id)
 
 
 async def _wait_for_login(client, query, user_id, platform):
     chat_id = query.message.chat.id
     label = SOCIAL_COOKIE_PLATFORMS[platform][0]
+
+    if user_id in _cookie_handlers:
+        old_item = _cookie_handlers.pop(user_id, None)
+        if old_item and old_item[0]:
+            with suppress(Exception):
+                client.remove_handler(*old_item[0])
+
     prompt = await edit_message(
         query.message,
         f"<b>🔐 {label} Login</b>\n\n"
@@ -143,16 +192,38 @@ async def _wait_for_login(client, query, user_id, platform):
         "Use only an account you are authorized to access. Delete the message after saving.</blockquote>",
         InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data=f"scookie cancel {platform}")]]),
     )
+
+    async def login_filter(_, __, event):
+        u = event.from_user or event.sender_chat
+        if not u or u.id != user_id or event.chat.id != chat_id:
+            return False
+        if event.text and event.text.startswith("/"):
+            _cookie_handlers.pop(user_id, None)
+            with suppress(Exception):
+                client.remove_handler(*handler)
+            return False
+        return bool(event.text)
+
     async def pfunc(_, msg):
         if msg.chat.id != chat_id or not msg.from_user or msg.from_user.id != user_id:
             return
+
         if not msg.text:
-            await msg.reply("❌ Send the username/email on line 1 and password on line 2.")
             return
+        if msg.text.lower().strip() in ("cancel", "close", "stop", "back"):
+            _cookie_handlers.pop(user_id, None)
+            with suppress(Exception):
+                client.remove_handler(*handler)
+            await send_message(msg, "❌ Login input cancelled.")
+            with suppress(Exception):
+                await _render(query.message, user_id)
+            return
+
         parts = msg.text.splitlines()
         if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
-            await msg.reply("❌ Invalid format. Use two lines: username/email then password.")
+            await send_message(msg, "❌ Invalid format. Use two lines: username/email then password.")
             return
+
         creds = user_data.get(user_id, {}).get("SOCIAL_LOGIN", {})
         if not isinstance(creds, dict):
             creds = {}
@@ -169,17 +240,30 @@ async def _wait_for_login(client, query, user_id, platform):
         _cookie_handlers.pop(user_id, None)
         with suppress(Exception):
             client.remove_handler(*handler)
-        await _render(query.message, user_id)
-    handler = client.add_handler(MessageHandler(pfunc, filters=filters.create(lambda _, __, m: True)), group=-2)
+        with suppress(Exception):
+            await _render(query.message, user_id)
+
+    handler = client.add_handler(
+        MessageHandler(
+            pfunc,
+            filters=filters.create(login_filter),
+        ),
+        group=-2,
+    )
     _cookie_handlers[user_id] = (handler, platform)
-    for _ in range(120):
-        if user_id not in _cookie_handlers:
-            return
-        await sleep(0.5)
-    _cookie_handlers.pop(user_id, None)
-    with suppress(Exception):
-        client.remove_handler(*handler)
-    await _render(query.message, user_id)
+
+    try:
+        for _ in range(120):
+            if user_id not in _cookie_handlers:
+                break
+            await sleep(0.5)
+    finally:
+        _cookie_handlers.pop(user_id, None)
+        with suppress(Exception):
+            client.remove_handler(*handler)
+        with suppress(Exception):
+            await _render(query.message, user_id)
+
 
 @new_task
 async def cookiesettings(client, message):
@@ -206,14 +290,24 @@ async def social_cookie_callback(client, query):
         return
     await query.answer()
     if len(data) >= 3 and data[1] == "cancel":
-        _cookie_handlers.pop(user_id, None)
+        old_item = _cookie_handlers.pop(user_id, None)
+        if old_item and old_item[0]:
+            with suppress(Exception):
+                client.remove_handler(*old_item[0])
         await _render(query.message, user_id)
         return
     if data[1] == "back":
+        old_item = _cookie_handlers.pop(user_id, None)
+        if old_item and old_item[0]:
+            with suppress(Exception):
+                client.remove_handler(*old_item[0])
         await _render(query.message, user_id)
         return
     if data[1] == "close":
-        _cookie_handlers.pop(user_id, None)
+        old_item = _cookie_handlers.pop(user_id, None)
+        if old_item and old_item[0]:
+            with suppress(Exception):
+                client.remove_handler(*old_item[0])
         await query.message.delete()
         return
     platform = data[1]

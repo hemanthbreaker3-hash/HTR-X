@@ -61,7 +61,6 @@ from .social_cookies import cookiesettings, social_cookie_callback
 from .addbot import add_bot_command, add_bot_cb
 from .request_ff import request_ff, reqff_callback
 from .taskm import taskm_command, taskm_callback, taskuser_command, taskuser_callback
-from .dlapi import dlapi_command, dapi_command, dlapi_callback, dapi_callback, resolve_custom_dlapi
 from ..helper.ext_utils.track_manager import tm_callback
 
 __all__ = [
@@ -158,9 +157,4 @@ __all__ = [
     "taskm_callback",
     "taskuser_command",
     "taskuser_callback",
-    "dlapi_command",
-    "dapi_command",
-    "dlapi_callback",
-    "dapi_callback",
-    "resolve_custom_dlapi",
 ]

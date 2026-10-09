@@ -231,6 +231,15 @@ Apply custom title, artist, audio and subtitle language tags.
 <b>Example:</b>
 <code>/mirror link -meta title=Movie|artist={audiolang} Edition</code></blockquote>"""
 
+track_manager_help = """<b>Audio & Subtitle Track Manager:</b> -tm
+
+<code>/cmd link -tm</code>
+<code>/cmd link -tr</code>
+<code>/cmd link -track</code>
+
+<blockquote>Opens an interactive visual menu to reorder (arrange) audio tracks and select or remove unwanted audio/subtitle streams before uploading.
+• Supports individual file track editing or batch <b>Apply to All</b>.</blockquote>"""
+
 MIRROR_HELP_DICT = {
     "main": mirror,
     "New-Name": new_name,
@@ -259,6 +268,7 @@ MIRROR_HELP_DICT = {
     "Thumb-Layout": thumbnail_layout,
     "Leech-Type": leech_as,
     "FFmpeg-Cmds": ffmpeg_cmds,
+    "Track-Manager": track_manager_help,
     "Metadata": metadata,
     "AllDebrid": alldebrid_arg,
     "Seedr": seedr_arg,

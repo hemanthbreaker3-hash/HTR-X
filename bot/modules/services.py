@@ -34,9 +34,9 @@ async def _build_start_buttons():
     buttons = ButtonMaker()
     lang = Language()
     buttons.url_button(
-        lang.START_BUTTON1, "https://www.github.com/SilentDemonSD/WZML-X", "header"
+        lang.START_BUTTON1, "https://github.com/abhinai2244/CBML", "header"
     )
-    buttons.url_button(lang.START_BUTTON2, "https://t.me/WZML_X", "header")
+    buttons.url_button(lang.START_BUTTON2, "https://t.me/cantarellabots", "header")
 
     chat_ids = list(auth_chats.keys())
     if Config.AUTHORIZED_CHATS:
@@ -70,7 +70,14 @@ async def _build_start_buttons():
             if link:
                 buttons.url_button(title, link, position="default")
 
-    return buttons.build_menu(b_cols=3, h_cols=2)
+    buttons.url_button(
+        "TENKA IZUMO",
+        "https://t.me/cantarella_wuwa",
+        position="footer",
+        style=ButtonStyle.DANGER,
+    )
+
+    return buttons.build_menu(b_cols=3, h_cols=2, f_cols=1)
 
 
 @new_task
@@ -130,7 +137,7 @@ async def start(_, message):
     if await CustomFilters.authorized(_, message):
         start_string = (
             f"<b>👋 Welcome, {escape(user_name)}!</b>\n\n"
-            f"<blockquote><b>HTR-X Bot</b> is ready to mirror and leech files, torrents, and cloud links to Telegram or Cloud Storage.</blockquote>\n\n"
+            f"<blockquote><b>CANTARELLABOTS</b> is ready to mirror and leech files, torrents, and cloud links to Telegram or Cloud Storage.</blockquote>\n\n"
             f"<b>💡 Commands & Help:</b> Use /{help_cmd} to view all available commands and guides.\n"
             f"<b>💬 Authorized Chats:</b> Click any of the authorized chat buttons below to access supported groups."
         )
@@ -149,7 +156,7 @@ async def start(_, message):
         )
     else:
         start_string = (
-            f"<b>👋 Welcome to HTR-X Bot, {escape(user_name)}!</b>\n\n"
+            f"<b>👋 Welcome to CANTARELLABOTS, {escape(user_name)}!</b>\n\n"
             f"<blockquote>Mirror and leech files, torrents, and links to Telegram or Cloud Storage.\n\n"
             f"<b>Note:</b> You are not authorized to use this bot instance directly in private.</blockquote>\n\n"
             f"<b>💬 Authorized Chats:</b> Join our authorized chats below to get access."
@@ -269,8 +276,8 @@ async def log_cb(_, query):
                 total += len(line) + 1
                 if total > 3500:
                     break
-
-            text = f"<b>📜 Recent Log Entries ({len(res)} lines)</b>\n\n<blockquote expandable>{escape('\n'.join(reversed(res)))}</blockquote>"
+            log_content = escape("\n".join(reversed(res)))
+            text = f"<b>📜 Recent Log Entries ({len(res)} lines)</b>\n\n<blockquote expandable>{log_content}</blockquote>"
 
             btn = ButtonMaker()
             btn.data_button("Close", f"log {user_id} close", style=ButtonStyle.DANGER)

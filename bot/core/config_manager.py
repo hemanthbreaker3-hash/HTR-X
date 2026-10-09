@@ -196,7 +196,7 @@ class Config:
     WEB_ACCESS_PASSWORD = ""
     WEB_PINCODE = True
     YT_DLP_OPTIONS = {}
-    YT_DESP = "Uploaded with HTR-X bot"
+    YT_DESP = "Uploaded with CANTARELLABOTS"
     YT_TAGS = ["telegram", "bot", "youtube"]
     YT_CATEGORY_ID = 22
     YT_PRIVACY_STATUS = "unlisted"
