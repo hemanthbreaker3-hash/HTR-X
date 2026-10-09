@@ -9,9 +9,8 @@ log() { printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 fail() { local rc=$?; echo "[ERROR] Deployment failed at line ${BASH_LINENO[0]} (exit ${rc})." >&2; exit "$rc"; }
 trap fail ERR
 
-if [[ -z "${SERVICE_NAME:-}" ]]; then
-  SERVICE_NAME="cantarellabots_bot"
-fi
+BASE_SERVICE_NAME="${SERVICE_NAME:-cantarellabots_bot}"
+SERVICE_NAME="$BASE_SERVICE_NAME"
 
 echo "=== Starting VPS Deployment for Mirror-Leech Bot ==="
 
@@ -20,6 +19,84 @@ if [ "$EUID" -ne 0 ]; then
   echo "[-] Please run as root or with sudo."
   exit 1
 fi
+
+# Avoid replacing another project's systemd unit. Reuse the name only when it
+# already points to this exact checkout; otherwise pick the next free suffix.
+if [[ -f "$APP_DIR/config.py" ]]; then
+  # Recover the common copy/paste mistake shown in the user's logs:
+  # `OWNER_ID =` with no value. Prompt for the real Telegram numeric ID.
+  if grep -Eq '^[[:space:]]*OWNER_ID[[:space:]]*=[[:space:]]*(#.*)?$' "$APP_DIR/config.py"; then
+    if [[ -t 0 ]]; then
+      read -r -p "Enter your numeric Telegram OWNER_ID (from @userinfobot): " OWNER_ID_INPUT
+      if [[ "$OWNER_ID_INPUT" =~ ^[1-9][0-9]*$ ]]; then
+        OWNER_ID_INPUT="$OWNER_ID_INPUT" python3 - "$APP_DIR/config.py" <<'PYOWNER'
+import os, re, sys
+p=sys.argv[1]; value=os.environ["OWNER_ID_INPUT"]
+s=open(p, encoding="utf-8").read()
+s,n=re.subn(r'(?m)^(\s*OWNER_ID\s*=\s*)(?:#.*)?$', lambda m: m.group(1)+value, s, count=1)
+if n != 1: raise SystemExit("Could not safely repair OWNER_ID")
+open(p,"w",encoding="utf-8").write(s)
+PYOWNER
+      else
+        echo "[ERROR] OWNER_ID must be a positive integer." >&2
+        exit 2
+      fi
+    else
+      echo "[ERROR] config.py contains a blank OWNER_ID. Run deploy.vps interactively and enter your numeric Telegram user ID." >&2
+      exit 2
+    fi
+  fi
+  if ! python3 -m py_compile "$APP_DIR/config.py" 2>/dev/null; then
+    echo "[ERROR] config.py has invalid Python syntax. Fix the reported line first." >&2
+    python3 -m py_compile "$APP_DIR/config.py" || true
+    echo "Example: OWNER_ID = 123456789  # integer; do not leave it blank" >&2
+    exit 2
+  fi
+  if ! python3 - "$APP_DIR/config.py" <<'PYCONFIG'
+import ast, sys
+p = sys.argv[1]
+tree = ast.parse(open(p, encoding="utf-8").read(), filename=p)
+values = {}
+for node in tree.body:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                try: values[target.id] = ast.literal_eval(node.value)
+                except Exception: pass
+owner = values.get("OWNER_ID")
+if not isinstance(owner, int) or isinstance(owner, bool) or owner <= 0:
+    print("[ERROR] config.py: OWNER_ID must be your numeric Telegram user ID, e.g. OWNER_ID = 123456789", file=sys.stderr)
+    sys.exit(1)
+if not isinstance(values.get("BOT_TOKEN"), str) or ":" not in values.get("BOT_TOKEN", ""):
+    print("[ERROR] config.py: BOT_TOKEN is missing or invalid. Set the token from @BotFather.", file=sys.stderr)
+    sys.exit(1)
+if not isinstance(values.get("TELEGRAM_API"), int) or values.get("TELEGRAM_API", 0) <= 0:
+    print("[ERROR] config.py: TELEGRAM_API must be a positive integer from my.telegram.org.", file=sys.stderr)
+    sys.exit(1)
+if not values.get("TELEGRAM_HASH"):
+    print("[ERROR] config.py: TELEGRAM_HASH is empty. Set it from my.telegram.org.", file=sys.stderr)
+    sys.exit(1)
+PYCONFIG
+  then
+    exit 2
+  fi
+else
+  echo "[ERROR] config.py is missing from $APP_DIR. Add it before deployment." >&2
+  exit 2
+fi
+
+while [[ -e "/etc/systemd/system/${SERVICE_NAME}.service" ]] || systemctl list-unit-files --no-legend "${SERVICE_NAME}.service" 2>/dev/null | grep -q .; do
+  existing_workdir="$(sed -n 's/^WorkingDirectory=//p' "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null | head -n1 || true)"
+  if [[ "$existing_workdir" == "$APP_DIR" ]]; then
+    break
+  fi
+  n=2
+  while [[ -e "/etc/systemd/system/${BASE_SERVICE_NAME}-${n}.service" ]] || systemctl list-unit-files --no-legend "${BASE_SERVICE_NAME}-${n}.service" 2>/dev/null | grep -q .; do
+    n=$((n+1))
+  done
+  SERVICE_NAME="${BASE_SERVICE_NAME}-${n}"
+  break
+done
 
 log "[1/6] Updating system and installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -35,8 +112,6 @@ apt-get install -y -qq \
     libffi-dev \
     libssl-dev \
     ffmpeg \
-    p7zip-full \
-    p7zip-rar \
     par2 \
     aria2 \
     rclone \
@@ -63,12 +138,26 @@ apt-get install -y -qq \
     libc-ares-dev \
     libfreeimage-dev
 
+# Archive utility package names differ across Ubuntu/Debian releases.
+if apt-cache show p7zip-full >/dev/null 2>&1; then
+  apt-get install -y p7zip-full
+elif apt-cache show 7zip >/dev/null 2>&1; then
+  apt-get install -y 7zip
+else
+  log "Warning: neither p7zip-full nor 7zip is available from configured repositories."
+fi
+
 # YouTube extraction needs a supported JavaScript runtime. Ubuntu's Node.js
 # package can be too old for yt-dlp, so install Deno if it is missing.
 if ! command -v deno >/dev/null 2>&1; then
     log "Installing Deno JavaScript runtime for yt-dlp..."
     curl -fsSL https://deno.land/install.sh | sh
-    install -m 0755 /root/.deno/bin/deno /usr/local/bin/deno
+    DENO_BIN="${HOME}/.deno/bin/deno"
+    if [[ ! -x "$DENO_BIN" ]]; then
+      echo "[ERROR] Deno installation failed; yt-dlp JavaScript challenge support is unavailable." >&2
+      exit 1
+    fi
+    install -m 0755 "$DENO_BIN" /usr/local/bin/deno
 fi
 
 log "[2/6] Setting up Python virtual environment..."
@@ -78,7 +167,6 @@ fi
 
 source venv/bin/activate
 pip install --upgrade pip -q
-pip install wzgram
 if [ -f "requirements.txt" ]; then
     pip install -r requirements.txt
 else
@@ -127,11 +215,17 @@ systemctl daemon-reload
 systemctl enable ${SERVICE_NAME}.service
 
 log "[6/6] Starting application service..."
-systemctl restart ${SERVICE_NAME}.service
+systemctl restart "${SERVICE_NAME}.service"
+sleep 3
+if ! systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  echo "[ERROR] Service did not remain active. Recent logs:" >&2
+  journalctl -u "${SERVICE_NAME}.service" -n 100 --no-pager >&2 || true
+  exit 1
+fi
 
-systemctl --no-pager --full status "${SERVICE_NAME}.service" || true
+systemctl --no-pager --full status "${SERVICE_NAME}.service"
 
-echo "=== VPS Deployment Complete! ==="
+echo "=== VPS Deployment Complete! Service is active. ==="
 echo "Service Name: ${SERVICE_NAME}"
 echo "Status Check: systemctl status ${SERVICE_NAME}"
 echo "View Logs:    journalctl -u ${SERVICE_NAME} -f"
