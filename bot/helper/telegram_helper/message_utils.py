@@ -44,6 +44,10 @@ from .button_build import ButtonMaker
 
 
 async def send_message(message, text, buttons=None, block=True, photo=None, **kwargs):
+    # Accept both the helper's legacy `buttons` argument and Pyrogram's
+    # `reply_markup` keyword. Remove the keyword before forwarding kwargs so
+    # Message.reply/reply_photo never receive `reply_markup` twice.
+    buttons = kwargs.pop("reply_markup", buttons)
     img_photo = choice(Config.IMAGES) if (photo == "IMAGES" and Config.USE_IMAGES and Config.IMAGES) else (None if photo == "IMAGES" else photo)
     try:
         if img_photo:
