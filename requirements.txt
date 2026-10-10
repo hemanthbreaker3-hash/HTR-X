@@ -1,4 +1,3 @@
-asyncio
 aiofiles
 aiohttp
 aioshutil
@@ -25,7 +24,7 @@ pillow
 psutil
 pycountry
 motor>=3.3.0
-pymongo
+pymongo>=4.9
 wzgram
 python-magic
 pytz

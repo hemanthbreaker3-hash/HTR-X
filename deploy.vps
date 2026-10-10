@@ -59,10 +59,10 @@ fi
 
 source venv/bin/activate
 pip install --upgrade pip -q
-pip install wzgram
+python -m pip install --upgrade pip
 if [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt -q
-    pip install --no-deps "mega.py>=1.0.8" -q
+    python -m pip install -r requirements.txt
+    python -m pip install --no-deps "mega.py>=1.0.8"
 fi
 
 echo "[3/6] Preparing CANTARELLABOTS runtime, MegaSDK target, directories and permissions..."
@@ -74,7 +74,8 @@ echo "[4/6] Configuring systemd service..."
 cat <<EOF > /etc/systemd/system/${SERVICE_NAME}.service
 [Unit]
 Description=CANTARELLABOTS Mirror Leech Bot Service
-After=network.target
+Wants=network-online.target
+After=network-online.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -83,10 +84,13 @@ Type=simple
 User=root
 WorkingDirectory=$APP_DIR
 ExecStart=/bin/bash $APP_DIR/start.sh
-Restart=always
-RestartSec=5
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=180
+KillSignal=SIGINT
 Environment="PATH=$APP_DIR/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
+Environment="PYTHONPATH=$APP_DIR"
 
 [Install]
 WantedBy=multi-user.target
