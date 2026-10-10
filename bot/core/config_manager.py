@@ -227,6 +227,16 @@ class Config:
         # override them. Validate required credentials only after both sources load.
         cls.load_config()
         cls.load_env()
+        # Values imported from config.py may be strings even when the class
+        # default is an integer. Normalize IDs before handlers compare them.
+        try:
+            cls.OWNER_ID = int(str(cls.OWNER_ID).strip())
+        except (TypeError, ValueError):
+            raise ValueError("OWNER_ID must be a valid numeric Telegram user ID.")
+        try:
+            cls.TELEGRAM_API = int(str(cls.TELEGRAM_API).strip())
+        except (TypeError, ValueError):
+            raise ValueError("TELEGRAM_API must be a valid numeric API ID.")
         for key in ["BOT_TOKEN", "OWNER_ID", "TELEGRAM_API", "TELEGRAM_HASH"]:
             value = getattr(cls, key)
             if isinstance(value, str):
@@ -377,6 +387,14 @@ class Config:
             cls.LEECH_LOG_CHAT = cls._convert_env_type(
                 "LEECH_LOG_CHAT", config_dict["LEECH_DUMP_CHAT"]
             )
+        try:
+            cls.OWNER_ID = int(str(cls.OWNER_ID).strip())
+        except (TypeError, ValueError):
+            raise ValueError("OWNER_ID must be a valid numeric Telegram user ID.")
+        try:
+            cls.TELEGRAM_API = int(str(cls.TELEGRAM_API).strip())
+        except (TypeError, ValueError):
+            raise ValueError("TELEGRAM_API must be a valid numeric API ID.")
         for key in ["BOT_TOKEN", "OWNER_ID", "TELEGRAM_API", "TELEGRAM_HASH"]:
             value = getattr(cls, key)
             if isinstance(value, str):

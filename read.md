@@ -201,3 +201,11 @@ This project is distributed under the license in [`LICENSE`](LICENSE). Review it
 **HTR-X • Mirror smarter. Manage tasks cleanly.**
 
 </div>
+
+## Owner and Sudo Troubleshooting
+
+- Set `OWNER_ID` to the numeric Telegram user ID, not a username. The startup loader normalizes it to an integer so string values from `config.py` and Heroku Config Vars compare correctly.
+- Set `SUDO_USERS` as space-separated numeric IDs, for example `123456789 987654321`.
+- The owner and sudo commands are available in private chat as well as authorized chats. A user authorized in the database can use supported commands in DM.
+- After changing Config Vars, restart the worker and inspect logs for configuration or handler errors.
+- `/addsudo USER_ID` and `/rmsudo USER_ID` accept numeric IDs; they can also target a user by replying to that user's message.

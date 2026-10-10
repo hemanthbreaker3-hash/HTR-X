@@ -116,42 +116,54 @@ async def unauthorize(_, message):
 
 @new_task
 async def add_sudo(_, message):
-    id_ = ""
-    msg = message.text.split()
-    if len(msg) > 1:
-        id_ = int(msg[1].strip())
-    elif reply_to := message.reply_to_message:
-        id_ = (reply_to.from_user or reply_to.sender_chat).id
-    if id_:
-        if id_ in user_data and user_data[id_].get("SUDO"):
-            msg = "<blockquote>User is already a Sudo user!</blockquote>"
-        else:
-            update_user_ldata(id_, "SUDO", True)
-            await database.update_user_data(id_)
-            msg = f"<blockquote><b>Promoted as Sudo user!</b> User ID: <code>{id_}</code></blockquote>"
+    parts = (message.text or "").split()
+    target = None
+    if len(parts) > 1:
+        try:
+            target = int(parts[1].strip())
+        except (TypeError, ValueError):
+            await send_message(message, "<blockquote>Invalid user ID. Use <code>/addsudo USER_ID</code> or reply to a user's message.</blockquote>")
+            return
+    elif message.reply_to_message:
+        sender = message.reply_to_message.from_user or message.reply_to_message.sender_chat
+        target = getattr(sender, "id", None)
+        if target is not None:
+            target = int(target)
+    if target is None:
+        response = "<blockquote>Provide a numeric user ID or reply to a user's message to promote.</blockquote>"
+    elif target in user_data and user_data[target].get("SUDO"):
+        response = "<blockquote>User is already a Sudo user!</blockquote>"
     else:
-        msg = "<blockquote>Provide user ID or reply to a user's message to promote.</blockquote>"
-    await send_message(message, msg)
+        update_user_ldata(target, "SUDO", True)
+        await database.update_user_data(target)
+        response = f"<blockquote><b>Promoted as Sudo user!</b> User ID: <code>{target}</code></blockquote>"
+    await send_message(message, response)
 
 
 @new_task
 async def remove_sudo(_, message):
-    id_ = ""
-    msg = message.text.split()
-    if len(msg) > 1:
-        id_ = int(msg[1].strip())
-    elif reply_to := message.reply_to_message:
-        id_ = (reply_to.from_user or reply_to.sender_chat).id
-    if id_:
-        if id_ in user_data and user_data[id_].get("SUDO"):
-            update_user_ldata(id_, "SUDO", False)
-            await database.update_user_data(id_)
-            msg = f"<blockquote><b>Demoted Sudo user!</b> User ID: <code>{id_}</code></blockquote>"
-        else:
-            msg = "<blockquote>User is not a Sudo user! Sudo users added via config must be removed from config.env.</blockquote>"
+    parts = (message.text or "").split()
+    target = None
+    if len(parts) > 1:
+        try:
+            target = int(parts[1].strip())
+        except (TypeError, ValueError):
+            await send_message(message, "<blockquote>Invalid user ID. Use <code>/rmsudo USER_ID</code> or reply to a user's message.</blockquote>")
+            return
+    elif message.reply_to_message:
+        sender = message.reply_to_message.from_user or message.reply_to_message.sender_chat
+        target = getattr(sender, "id", None)
+        if target is not None:
+            target = int(target)
+    if target is None:
+        response = "<blockquote>Provide a numeric user ID or reply to a user's message to demote.</blockquote>"
+    elif target in user_data and user_data[target].get("SUDO"):
+        update_user_ldata(target, "SUDO", False)
+        await database.update_user_data(target)
+        response = f"<blockquote><b>Demoted Sudo user!</b> User ID: <code>{target}</code></blockquote>"
     else:
-        msg = "<blockquote>Provide user ID or reply to a user's message to demote.</blockquote>"
-    await send_message(message, msg)
+        response = "<blockquote>User is not a database Sudo user. Sudo users configured in SUDO_USERS must be removed from the configuration.</blockquote>"
+    await send_message(message, response)
 
 
 @new_task
