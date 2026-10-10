@@ -194,6 +194,12 @@ async def dlapi_input(_, message):
     if not pending or not message.text:
         return
     value = message.text.strip()
+    if value.lower() in {"cancel", "/cancel"}:
+        _PENDING.pop(uid, None)
+        return await send_message(message, "API setup cancelled.")
+    # Never consume a new command as an API mapping; let its own handler process it.
+    if value.startswith("/"):
+        return
     target = pending["target"]
     is_global = pending.get("global", False)
     if value.lower().startswith("/dlapi "):
@@ -246,13 +252,25 @@ async def dlapi_command(_, message):
         await database.update_user_data(Config.OWNER_ID)
         return await send_message(message, f"Global API for <code>{escape(domain)}</code> is now <b>{'ON' if entry['global'] else 'OFF'}</b>.")
 
-    if not value or value.lower() in {"list", "show"}:
+    if value.lower() in {"add", "set", "new"} or not value:
+        _PENDING[uid] = {"target": uid, "global": False}
+        return await send_message(
+            message,
+            "<b>Send your API mapping now</b>\n\n"
+            "Format: <code>domain.com=https://api.example/api?url=</code>\n"
+            "Example: <code>gdflix.dev=https://api.example/api?url=</code>\n\n"
+            "The API URL must end with <code>url=</code>, <code>?</code>, or <code>&amp;</code>, or contain <code>{url}</code>.\n"
+            "Send <code>cancel</code> to cancel. This setup is private to your account.",
+            reply_markup=_manager_keyboard(uid),
+        )
+
+    if value.lower() in {"list", "show"}:
         if not mapping:
             return await send_message(
                 message,
                 "<b>Download API manager</b>\n\n"
-                "Add a mapping by sending:\n"
-                "<code>/dlapi domain.com=https://api.example/api?url=</code>\n\n"
+                "Add a mapping with <code>/dlapi add</code>, then send:\n"
+                "<code>domain.com=https://api.example/api?url=</code>\n\n"
                 "Use <code>/dlapi remove domain.com</code> to remove one.\n"
                 "Use <code>/dapi https://domain.com/file/123</code> to resolve a link.", reply_markup=_manager_keyboard(uid),
             )
@@ -364,9 +382,11 @@ async def dapi_command(_, message):
 def register_dapi_handlers():
     TgClient.bot.add_handler(MessageHandler(dlapi_input, filters=private & ~command(BotCommands.DlapiCommand, case_sensitive=True)), group=9)
     TgClient.bot.add_handler(CallbackQueryHandler(dlapi_callback, filters=__import__("pyrogram").filters.regex(r"^dlapi:")), group=9)
+    # Keep command handlers active in groups only so the command functions can
+    # explicitly tell users that API management/resolution is DM-only.
     TgClient.bot.add_handler(
-        MessageHandler(dlapi_command, filters=command(BotCommands.DlapiCommand, case_sensitive=True) & private)
+        MessageHandler(dlapi_command, filters=command(BotCommands.DlapiCommand, case_sensitive=True))
     )
     TgClient.bot.add_handler(
-        MessageHandler(dapi_command, filters=command(BotCommands.DapiCommand, case_sensitive=True) & private)
+        MessageHandler(dapi_command, filters=command(BotCommands.DapiCommand, case_sensitive=True))
     )
