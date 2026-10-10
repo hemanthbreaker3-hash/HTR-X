@@ -130,9 +130,17 @@ async def dapi_command(_, message):
         return await send_message(message, "Please use /dapi in the bot's private chat.")
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        return await send_message(message, "Usage: <code>/dapi https://domain.com/file/123</code>")
+        return await send_message(
+            message,
+            "Usage: <code>/dapi https://domain.com/file/123 [-tm|-tc|-sync]</code>\n"
+            "• <code>-tm</code>: select/reorder audio and subtitle tracks\n"
+            "• <code>-tc</code>: edit audio/subtitle track title and language\n"
+            "• <code>-sync</code>: open the track planner before upload; navigate files and save choices",
+        )
 
-    original = args[1].strip().split()[0]
+    raw_args = args[1].strip().split()
+    original = raw_args[0]
+    task_flags = [flag for flag in raw_args[1:] if flag in ("-tm", "-tc", "-sync")]
     parsed = urlparse(original if "://" in original else f"https://{original}")
     domain = _domain(parsed.netloc)
     mapping = _api_map(message.from_user.id)
@@ -163,7 +171,7 @@ async def dapi_command(_, message):
         # download, post-processing, and configured upload destinations run as usual.
         # Work on a shallow message copy: never mutate the user's original /dapi text.
         task_message = copy(message)
-        task_message.text = f"/mirror {links[0]}"
+        task_message.text = f"/mirror {links[0]}" + (f" {' '.join(task_flags)}" if task_flags else "")
         await status.edit_text(
             "<b>Direct link extracted successfully.</b>\n"
             "Starting the normal download → process → upload pipeline…\n\n"

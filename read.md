@@ -78,7 +78,7 @@ Reduce file size before uploading to avoid hitting Telegram upload boundaries:
 - **Resolution Downscaling**: Convert 4K/1080p content down to `1920x1080`, `1280x720`, or `854x480`.
 - **Framerate Normalization**: Convert variable frame rates to fixed `24`, `30`, or `60` FPS.
 
-### 🎧 4. Audio Arranging & Removing (`-tm` / Track Manager)
+### 🎧 4. Audio Track Manager (`-tm`) and Metadata Editor (`-tc`)
 Take complete control over multi-audio and multi-subtitle media files with an interactive visual selector:
 - **Rearrange Audio Tracks**: Change default audio priority (e.g. Move `Telugu` or `Hindi` or `English` to the #1 default audio position using `⬆️` and `⬇️` buttons).
 - **Remove Unwanted Audio Streams**: Easily strip extra or unwanted language tracks with one click (`✓` / `✗` toggle).
@@ -106,6 +106,7 @@ Attach options directly to your `/leech` or `/mirror` commands:
 ```bash
 # 🎧 Open Interactive Audio Arranger & Remover (Track Manager)
 /leech <link> -tm
+/leech <link> -tc
 
 # Apply a custom FFmpeg transcode & delete original
 /leech <link> -ff ["-i mltb.video -c:v libx265 -crf 26 -c:a aac -b:a 128k mltb -del"]

@@ -173,6 +173,7 @@ def format_tm_ui(session):
         lines = [
             f"<b>{mode_title}</b>\n",
             f"• <b>File:</b> <code>{escape(fname)}</code>\n",
+            *( [f"• <b>Sync mode:</b> planner before upload\n"] if session.get("sync_preview") else [] ),
             "<b>Available Tracks:</b>",
         ]
 
@@ -194,6 +195,9 @@ def format_tm_ui(session):
             btn_label = f"{display_pos}. {t['short_lang']} [{status}]"
             toggle_action = "toggle_aud" if is_aud else "toggle_sub"
             buttons.data_button(btn_label, f"tmcb {toggle_action} {mid} {pos}", position="default")
+            if session.get("track_change"):
+                edit_action = "edit_aud" if is_aud else "edit_sub"
+                buttons.data_button(f"✏️ Edit #{display_pos}", f"tmcb {edit_action} {mid} {pos}", position="default")
 
         # Up and Down reorder buttons below track list in f_body (fb_cols=2)
         if len(order) > 1:
@@ -204,6 +208,14 @@ def format_tm_ui(session):
                 buttons.data_button(f"#{display_pos + 1} ⬆️", up_cb, position="f_body")
                 buttons.data_button(f"#{display_pos + 1} ⬇️", dn_cb, position="f_body")
 
+        # File navigation stays available while editing multi-file jobs.
+        if is_multi:
+            prev_idx = (cur_idx - 1) % total_files
+            next_idx = (cur_idx + 1) % total_files
+            buttons.data_button("⬅️ Previous File", f"tmcb file {mid} {prev_idx}", position="header")
+            buttons.data_button(f"File {cur_idx + 1}/{total_files}", "tmcb dummy", position="header")
+            buttons.data_button("Next File ➡️", f"tmcb file {mid} {next_idx}", position="header")
+
         # Footer controls
         if is_aud:
             buttons.data_button("💬 Subtitles", f"tmcb view {mid} sub", position="footer")
@@ -212,12 +224,12 @@ def format_tm_ui(session):
 
         if is_multi:
             buttons.data_button("🔄 Apply to All", f"tmcb apply_all {mid}", position="footer")
-            buttons.data_button("◀️ Back", f"tmcb back {mid}", position="footer")
+            buttons.data_button("◀️ File List", f"tmcb back {mid}", position="footer")
 
-        buttons.data_button("✅ Done", f"tmcb done {mid}", position="footer")
+        buttons.data_button("✅ Save & Continue", f"tmcb done {mid}", position="footer")
 
         footer_cols = 3 if is_multi else 2
-        return caption, buttons.build_menu(b_cols=1, fb_cols=2, f_cols=footer_cols)
+        return caption, buttons.build_menu(b_cols=1, h_cols=3 if is_multi else 1, fb_cols=2, f_cols=footer_cols)
 
 
 @new_task
@@ -292,6 +304,25 @@ async def tm_callback(client, query: CallbackQuery):
         caption, markup = format_tm_ui(session)
         await edit_message(session["msg"], caption, markup)
 
+    elif cmd in ("edit_aud", "edit_sub"):
+        pos = int(data[3])
+        is_audio = cmd == "edit_aud"
+        cur_file = files[cur_idx] if 0 <= cur_idx < len(files) else files[0]
+        tracks = cur_file["audio_tracks"] if is_audio else cur_file["sub_tracks"]
+        if pos < 0 or pos >= len(tracks):
+            return await query.answer("Track not found.", show_alert=True)
+        session["pending_edit"] = {"file_idx": cur_idx, "kind": "audio" if is_audio else "sub", "pos": pos}
+        track = tracks[pos]
+        await query.answer("Send track metadata")
+        await send_message(
+            query.message,
+            "✏️ <b>Edit Track Metadata</b>\n"
+            f"Current title: <code>{escape(track.get('title') or '')}</code>\n"
+            f"Current language: <code>{escape(track.get('full_lang') or '')}</code>\n\n"
+            "Reply with <code>title | language</code>. Either value may be left empty to keep it unchanged. "
+            "Use <code>.</code> to clear a value."
+        )
+
     elif cmd == "move_aud":
         display_pos = int(data[3])
         direction = int(data[4])
@@ -332,6 +363,17 @@ async def tm_callback(client, query: CallbackQuery):
                 target_sub_langs.append(cur_file["sub_tracks"][pos]["short_lang"])
 
         for f in files:
+            if session.get("track_change"):
+                # Metadata is copied by stream position, only where that position exists.
+                for pos, source_track in enumerate(cur_file["audio_tracks"]):
+                    if pos < len(f["audio_tracks"]):
+                        f["audio_tracks"][pos]["title"] = source_track.get("title", "")
+                        f["audio_tracks"][pos]["full_lang"] = source_track.get("full_lang", "")
+                for pos, source_track in enumerate(cur_file["sub_tracks"]):
+                    if pos < len(f["sub_tracks"]):
+                        f["sub_tracks"][pos]["title"] = source_track.get("title", "")
+                        f["sub_tracks"][pos]["full_lang"] = source_track.get("full_lang", "")
+                        f["sub_tracks"][pos]["short_lang"] = source_track.get("short_lang", "")
             # Apply audio rules
             new_aud_order = []
             new_aud_sel = set()
@@ -412,6 +454,37 @@ async def tm_callback(client, query: CallbackQuery):
             fut.set_result(True)
 
 
+async def track_manager_text(_, message):
+    if not message.from_user or not message.text or message.text.startswith("/"):
+        return
+    for session in list(track_manager_sessions.values()):
+        pending = session.get("pending_edit")
+        if not pending or session.get("user_id") != message.from_user.id:
+            continue
+        values = message.text.split("|", 1)
+        if len(values) != 2:
+            await send_message(message, "Invalid format. Send <code>title | language</code>.")
+            return
+        files = session["files"]
+        file_idx, kind, pos = pending["file_idx"], pending["kind"], pending["pos"]
+        tracks = files[file_idx]["audio_tracks" if kind == "audio" else "sub_tracks"]
+        track = tracks[pos]
+        title, language = (v.strip() for v in values)
+        if title:
+            track["title"] = "" if title == "." else title
+        if language:
+            track["full_lang"] = "" if language == "." else language
+            track["short_lang"] = get_short_lang({"tags": {"language": track["full_lang"], "title": track.get("title", "")}})
+        session.pop("pending_edit", None)
+        await send_message(message, "✅ Track metadata updated. Press Done to apply changes.")
+        try:
+            caption, markup = format_tm_ui(session)
+            await edit_message(session["msg"], caption, markup)
+        except Exception:
+            pass
+        return
+
+
 async def proceed_track_manager(listener, dl_path, gid):
     if not dl_path or not await aiopath.exists(dl_path):
         return dl_path
@@ -452,6 +525,8 @@ async def proceed_track_manager(listener, dl_path, gid):
                 "short_lang": get_short_lang(s),
                 "title": s.get("tags", {}).get("title", ""),
                 "full_lang": s.get("tags", {}).get("language", ""),
+                "original_title": s.get("tags", {}).get("title", ""),
+                "original_lang": s.get("tags", {}).get("language", ""),
             }
             for s in aud_streams
         ]
@@ -463,6 +538,8 @@ async def proceed_track_manager(listener, dl_path, gid):
                 "short_lang": get_short_lang(s),
                 "title": s.get("tags", {}).get("title", ""),
                 "full_lang": s.get("tags", {}).get("language", ""),
+                "original_title": s.get("tags", {}).get("title", ""),
+                "original_lang": s.get("tags", {}).get("language", ""),
             }
             for s in sub_streams
         ]
@@ -494,6 +571,8 @@ async def proceed_track_manager(listener, dl_path, gid):
         "dl_path": dl_path,
         "gid": gid,
         "is_multi": len(files_data) > 1,
+        "track_change": bool(getattr(listener, "track_changer", False)),
+        "sync_preview": bool(getattr(listener, "sync_track_preview", False)),
         "files": files_data,
         "current_file_idx": 0,
         "view_mode": "list" if len(files_data) > 1 else "audio",
@@ -548,7 +627,12 @@ async def proceed_track_manager(listener, dl_path, gid):
             or sub_order != list(range(len(sub_tracks)))
         )
 
-        if not aud_modified and not sub_modified:
+        meta_modified = bool(session.get("track_change")) and any(
+            track.get("title") != (track.get("original_title") or "")
+            or track.get("full_lang") != (track.get("original_lang") or "")
+            for track in aud_tracks + sub_tracks
+        )
+        if not aud_modified and not sub_modified and not meta_modified:
             continue
 
         out_path = f"{fp}.tm_out.mkv"
@@ -565,6 +649,22 @@ async def proceed_track_manager(listener, dl_path, gid):
             if pos in sel_sub:
                 s_idx = sub_tracks[pos]["index"]
                 cmd.extend(["-map", f"0:{s_idx}"])
+
+        if session.get("track_change"):
+            out_a = 0
+            for pos in aud_order:
+                if pos in sel_aud:
+                    track = aud_tracks[pos]
+                    cmd.extend(["-metadata:s:a:" + str(out_a), "title=" + track.get("title", "")])
+                    cmd.extend(["-metadata:s:a:" + str(out_a), "language=" + (track.get("full_lang") or "und")])
+                    out_a += 1
+            out_s = 0
+            for pos in sub_order:
+                if pos in sel_sub:
+                    track = sub_tracks[pos]
+                    cmd.extend(["-metadata:s:s:" + str(out_s), "title=" + track.get("title", "")])
+                    cmd.extend(["-metadata:s:s:" + str(out_s), "language=" + (track.get("full_lang") or "und")])
+                    out_s += 1
 
         cmd.extend(["-c", "copy", out_path])
 

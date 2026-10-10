@@ -1,5 +1,6 @@
 # ruff: noqa: F403, F405
 
+from pyrogram import filters
 from pyrogram.filters import command, regex, private
 from pyrogram.handlers import CallbackQueryHandler, EditedMessageHandler, MessageHandler
 from pyrogram.types import BotCommand
@@ -10,7 +11,7 @@ from ..helper.telegram_helper.bot_commands import BotCommands
 from ..helper.telegram_helper.filters import CustomFilters
 from ..modules import *
 from ..modules.taskm import taskm_command, taskm_callback, taskuser_command, taskuser_callback
-from ..helper.ext_utils.track_manager import tm_callback
+from ..helper.ext_utils.track_manager import tm_callback, track_manager_text
 from .tg_client import TgClient
 
 
@@ -468,6 +469,10 @@ async def add_handlers():
     )
     TgClient.bot.add_handler(
         CallbackQueryHandler(tm_callback, filters=regex("^tmcb"))
+    )
+    TgClient.bot.add_handler(
+        MessageHandler(track_manager_text, filters=private & filters.text),
+        group=1,
     )
     TgClient.bot.add_handler(
         MessageHandler(
