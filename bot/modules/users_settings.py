@@ -1638,6 +1638,12 @@ The bot does not guess undocumented endpoints.</blockquote>
         )
         buttons.data_button("Rename Format", f"userset {user_id} menu AUTO_RENAME_FORMAT")
 
+        auto_qb = user_dict.get("AUTO_QB", False)
+        buttons.data_button(
+            f"⚡ Auto qBittorrent: {'✓ ON' if auto_qb else 'OFF'}",
+            f"userset {user_id} tog AUTO_QB {'f' if auto_qb else 't'} advanced",
+        )
+
         buttons.data_button("YT-DLP Options", f"userset {user_id} menu YT_DLP_OPTIONS")
         if user_dict.get("YT_DLP_OPTIONS", False):
             ytopt = user_dict["YT_DLP_OPTIONS"]

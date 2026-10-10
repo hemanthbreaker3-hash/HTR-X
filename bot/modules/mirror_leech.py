@@ -131,6 +131,27 @@ class Mirror(TaskListener):
             )
             return
         msg_text = self.message.text or self.message.caption or ""
+        # Resolve configured domain-to-API links transparently for normal mirror,
+        # leech and uphoster tasks, including auto-triggered tasks.
+        try:
+            import re
+            from .dapi import resolve_api_url
+            candidate_urls = re.findall(r"https?://[^\s<>]+", msg_text)
+            if candidate_urls and not msg_text.lstrip().startswith(("/dapi", "/dlapi")):
+                for candidate in candidate_urls:
+                    clean_url = candidate.rstrip(".,!?)\\]")
+                    resolved = await resolve_api_url(self.message.from_user.id if self.message.from_user else self.user_id, clean_url)
+                    if resolved:
+                        # Use the first direct URL; the resolver preserves API response order.
+                        msg_text = msg_text.replace(candidate, resolved[0], 1)
+                        if self.message.text:
+                            self.message.text = msg_text
+                        elif self.message.caption:
+                            self.message.caption = msg_text
+                        break
+        except Exception as api_error:
+            from .. import LOGGER
+            LOGGER.warning("Download API resolution skipped: %s", api_error)
         text = msg_text.split("\n")
         input_list = text[0].split(" ") if text[0] else []
 
@@ -1366,8 +1387,9 @@ async def auto_task_handler(client, message):
     auto_leech = user_dict.get("AUTO_LEECH", False)
     auto_mirror = user_dict.get("AUTO_MIRROR", False)
     auto_ddl = user_dict.get("AUTO_DDL", False)
+    auto_qb = user_dict.get("AUTO_QB", False)
 
-    if not (auto_leech or auto_mirror or auto_ddl):
+    if not (auto_leech or auto_mirror or auto_ddl or auto_qb):
         return
 
     file_ = (
@@ -1421,6 +1443,22 @@ async def auto_task_handler(client, message):
         )
 
     if not file_ and not has_link:
+        return
+
+    # Auto qBittorrent takes precedence over aria2 for torrent/magnet inputs,
+    # preventing duplicate tasks when Auto Mirror/Leech is also enabled.
+    msg_lower = msg_text.lower()
+    is_torrent_input = is_magnet(msg_text) or ".torrent" in msg_lower
+    if file_ and getattr(file_, "file_name", "").lower().endswith(".torrent"):
+        is_torrent_input = True
+    if auto_qb and is_torrent_input:
+        if auto_leech:
+            await qb_leech(client, message)
+        elif auto_mirror:
+            await qb_mirror(client, message)
+        else:
+            # Auto qBittorrent alone follows the default mirror destination.
+            await qb_mirror(client, message)
         return
 
     if auto_leech:
