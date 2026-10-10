@@ -1,227 +1,203 @@
 <div align="center">
 
-<img src="docs/CBML-banner.jpg" alt="CBML Banner" width="100%"/>
+<img src="docs/CBML-banner.jpg" alt="HTR-X Banner" width="100%" />
 
-<br/>
+# ⚡ HTR-X — Premium Mirror & Leech Bot
 
-# ⚡ CBML ⚡
-### *CantarellaBots Mirror & Leech — Ultra-Fast Telegram & Cloud Engine*
+**A powerful Telegram automation engine for downloading, mirroring, leeching, and media processing.**
 
-[![GitHub Repository](https://img.shields.io/badge/GitHub-abhinai2244%2FCBML-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/abhinai2244/CBML)
-[![Telegram Channel](https://img.shields.io/badge/Telegram-@CantarellaBots-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/cantarellabots)
-[![Developer](https://img.shields.io/badge/Developer-@cantarella__wuwa-EA4335?style=flat-square&logo=telegram&logoColor=white)](https://t.me/cantarella_wuwa)
-[![Python Version](https://img.shields.io/badge/Python-3.10%20|%203.11%20|%203.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-Hardware%20Accelerated-007808?style=flat-square&logo=ffmpeg&logoColor=white)](https://ffmpeg.org/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-GPL%20v3.0-blueviolet?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![Heroku](https://img.shields.io/badge/Deploy-Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white)](HEROKU_DEPLOY.md)
+[![License](https://img.shields.io/badge/License-GPL--3.0-6E40C9?style=for-the-badge)](LICENSE)
 
-<br/>
-
-<p align="center">
-  <b>CBML</b> (<i>CantarellaBots Mirror & Leech</i>) is a high-speed, enterprise-grade Telegram bot engineered for ultra-fast downloads, cloud synchronization, and automated video post-processing.<br/>
-  Featuring an automated pipeline for <b>Watermarking</b>, <b>Video Transcoding (x264/x265 HEVC)</b>, <b>Audio Compression</b>, and <b>Multi-Cloud Mirroring</b>.
-</p>
-
-[✨ Features](#-core-features) • [🎬 Video Suite](#-video-transcoding--watermarking) • [🎮 Commands](#-command-reference) • [🚀 Quick Start](#-quick-deployment) • [👥 Community](#-community--support)
-
----
+**Quick links:** [Features](#-premium-features) · [Requirements](#-before-you-deploy) · [Heroku](#-deploy-on-heroku) · [VPS](#-one-command-vps-deployment) · [Docker](#-docker-deployment) · [Configuration](#-configuration) · [Troubleshooting](#-troubleshooting)
 
 </div>
 
-## 🌟 Core Features
-
-### 🚀 Download & Transfer Engines
-- **Torrent & Magnet**: High-concurrency downloads powered by **Aria2c** and **qBittorrent-nox**.
-- **Direct Web Links**: Cloud resume, Instant DL, R2, Cloudflare workers, and multi-threaded streams.
-- **Media Streaming**: 1,000+ streaming and social platforms supported via updated **yt-dlp**.
-- **Usenet / NZB**: Fast NZB downloads supported via **SABnzbd**.
-- **Debrid & Cloud Accounts**: Built-in support for **AllDebrid**, **Seedr**, and **Mega.nz**.
-
-### ☁️ Cloud Mirror & Leech Destinations
-- **Telegram Leech**: Supports 2GB (Bot) & 4GB (User Session) uploads with thumbnail generation.
-- **Google Drive**: Service accounts, user tokens, shared drives, and index site link generation.
-- **Rclone Integration**: 40+ cloud storage remotes (OneDrive, Dropbox, S3, WebDAV, etc.).
-- **DDL UpHosters**: Multi-upload to **GoFile, Buzzheavier, PixelDrain, DevUploads, VikingFile**.
-
 ---
 
-## 🎬 Video Transcoding & Watermarking
+## ✨ Premium features
 
-> [!NOTE]
-> All video processing tasks execute in an automatic sequential pipeline:  
-> **Download Complete ➔ Encode (x264/x265) ➔ Compress ➔ Watermark ➔ Auto-Merge ➔ Upload**
+### Download and transfer
+- **Mirror and leech:** Download from supported URLs and upload to Telegram or configured cloud destinations.
+- **Torrent support:** Aria2 and qBittorrent integrations where installed and enabled.
+- **Video and social downloads:** yt-dlp support for compatible sites and formats.
+- **Usenet:** SABnzbd integration where configured.
+- **Cloud storage:** Google Drive and rclone-based destinations, depending on your configuration.
+- **Task controls:** Queue/task management and command flags supported by the installed bot version.
 
-### 🏷️ 1. Watermark Engine
-Protect and brand your media content with automated overlays:
-- **Text Watermark**: Custom text or `@username` with customizable font size (e.g. `24`, `32`).
-- **8 Color Palettes**: Choose from `White`, `Black`, `Red`, `Green`, `Blue`, `Yellow`, `Cyan`, `Magenta`, or any custom Hex code (`#RRGGBB`).
-- **Image / Logo Overlay**: Upload your transparent PNG/JPG logo with automatic width scaling (`-150`, `150x50`).
-- **9-Point Screen Positioning**:
-  ```text
-  ┌─────────────────┬───────────────────┬──────────────────┐
-  │    Top-Left     │    Top-Center     │    Top-Right     │
-  ├─────────────────┼───────────────────┼──────────────────┤
-  │   Center-Left   │      Center       │   Center-Right   │
-  ├─────────────────┼───────────────────┼──────────────────┤
-  │   Bottom-Left   │   Bottom-Center   │   Bottom-Right   │
-  └─────────────────┴───────────────────┴──────────────────┘
-  ```
+### Media processing
+- **FFmpeg tools:** Optional conversion, encoding, compression, and watermark workflows.
+- **Audio and subtitle tools:** Inspect and manage available streams when supported by the source file and installed FFmpeg build.
+- **Archive handling:** Extraction and processing of supported archives.
+- **Naming and metadata:** Custom filenames, captions, and thumbnails through supported commands/settings.
 
-### 🗜️ 2. Smart Video Compressor
-Reduce file size before uploading to avoid hitting Telegram upload boundaries:
-- **CRF Control**: Tune compression levels (Default: `28`). Higher CRF = smaller size.
-- **Speed Presets**: `ultrafast`, `faster`, `medium`, `slow`.
-- **Audio Bitrate Optimization**: Downmix high-bitrate audio to `128k`, `96k`, or `64k` AAC.
+> Feature availability depends on your `config.py`, installed system packages, cloud credentials, Telegram limits, and the selected hosting plan. Hardware acceleration is not guaranteed on shared cloud dynos.
 
-### 🎞️ 3. Video Transcoder & Resolution Scaler
-- **Modern Codecs**: Transcode to **H.264** (`libx264`) or **HEVC / H.265** (`libx265`) for superior quality-to-size ratio.
-- **Resolution Downscaling**: Convert 4K/1080p content down to `1920x1080`, `1280x720`, or `854x480`.
-- **Framerate Normalization**: Convert variable frame rates to fixed `24`, `30`, or `60` FPS.
+## 🧰 Before you deploy
 
-### 🎧 4. Audio Track Manager (`-tm`) and Metadata Editor (`-tc`)
-Take complete control over multi-audio and multi-subtitle media files with an interactive visual selector:
-- **Rearrange Audio Tracks**: Change default audio priority (e.g. Move `Telugu` or `Hindi` or `English` to the #1 default audio position using `⬆️` and `⬇️` buttons).
-- **Remove Unwanted Audio Streams**: Easily strip extra or unwanted language tracks with one click (`✓` / `✗` toggle).
-- **Subtitle Management**: Select, keep, or purge unwanted subtitle languages.
-- **Batch Processing**: Use **Apply to All** to instantly replicate your audio/subtitle track choices across entire anime or TV series batches.
+Prepare the following:
 
----
+- A Telegram bot token from [@BotFather](https://t.me/BotFather).
+- Telegram API ID and API hash from [my.telegram.org](https://my.telegram.org).
+- Your numeric Telegram user ID for `OWNER_ID`.
+- A reachable MongoDB connection if your configuration uses MongoDB.
+- A Linux VPS for the recommended full-featured setup, or a compatible Heroku container dyno for a limited cloud deployment.
+- Any optional cloud-drive, rclone, debrid, or helper-bot credentials required by your configuration.
 
-## 🎮 Command Reference
+**Security:** Never commit real bot tokens, Telegram API hashes, database URLs, session strings, or cloud credentials to a public repository. If credentials have been exposed, revoke or rotate them before deployment.
 
-### 📥 Mirror & Leech Tasks
+## ☁️ Deploy on Heroku
 
-| Command | Short | Description | Example |
-| :--- | :---: | :--- | :--- |
-| `/leech` | `/l` | Download and upload to Telegram | `/leech <url/magnet>` |
-| `/mirror` | `/m` | Download and mirror to Cloud / Drive | `/mirror <url/magnet>` |
-| `/qbleech` | `/ql` | Force download via qBittorrent | `/qbleech <magnet>` |
-| `/ytdlleech` | `/yl` | Download video/playlist via yt-dlp | `/ytdlleech <youtube_link>` |
-| `/speedtest` | `/spt` | Run server network speed and latency test | `/speedtest` |
+See the complete guide in [`HEROKU_DEPLOY.md`](HEROKU_DEPLOY.md).
 
-### 🛠️ Useful Task Flags
+### Deployment overview
 
-Attach options directly to your `/leech` or `/mirror` commands:
+1. Fork or push this project to a GitHub repository you control.
+2. Create a Heroku app and select the **Container** stack.
+3. Set required credentials as Heroku Config Vars; the loader now supports environment-variable overrides.
+4. Deploy the worker image and scale it to one instance.
+5. Inspect logs and confirm that the bot, download engines, and required services start correctly.
 
 ```bash
-# 🎧 Open Interactive Audio Arranger & Remover (Track Manager)
-/leech <link> -tm
-/leech <link> -tc
-
-# Apply a custom FFmpeg transcode & delete original
-/leech <link> -ff ["-i mltb.video -c:v libx265 -crf 26 -c:a aac -b:a 128k mltb -del"]
-
-# Create a password-protected ZIP archive
-/leech <link> -z mypassword123
-
-# Rename output file
-/leech <link> -n "Cantarella_Movie.mp4"
-
-# Generate a 3x3 video screenshot grid
-/leech <link> -tl 3x3
-
-# Attach a custom thumbnail
-/leech <link> -t https://images.site/thumb.jpg
+heroku login
+heroku stack:set container -a YOUR_APP_NAME
+heroku container:login
+heroku container:push worker -a YOUR_APP_NAME
+heroku container:release worker -a YOUR_APP_NAME
+heroku ps:scale worker=1 -a YOUR_APP_NAME
+heroku logs --tail -a YOUR_APP_NAME
 ```
 
----
+Use **one worker** unless the project has been explicitly configured for multi-instance task coordination. Multiple workers can duplicate Telegram updates or tasks.
 
-## ⚙️ Interactive Settings Menus
+### Heroku uptime and limitations
 
-### 👤 User Settings (`/usetting` or `/us`)
-Send `/usetting` in bot chat to customize your personal preferences:
-- **`ENC & COM & WATERMARK`**: Enable/disable personal video encoding, compression, and logo watermarks.
-- **`Leech Settings`**: Configure custom thumbnails, thumbnail watermarks, and upload modes.
-- **`Uphoster Settings`**: Toggle destination hosts (**GoFile**, **PixelDrain**, **Buzzheavier**, etc.).
+Heroku can restart dynos during normal platform operations; no README, script, or keep-alive ping can guarantee zero restarts or prevent platform enforcement. For a continuously running bot, use an eligible paid always-on dyno and keep the app within Heroku's acceptable-use rules. This bot's download, torrent, FFmpeg, disk, and network workloads may exceed small dyno limits. Heroku's local filesystem is ephemeral, so store important files externally.
 
-### 📊 Task Manager & Limits (`/taskm` & `/taskuser`)
-- **`/taskm`** *(Admin/Sudo)*: View live running tasks, manage queue slots, and set user limits.
-- **`/taskuser`** *(Users)*: Check your active running tasks, queue position, and personal limits.
+The project supports Heroku Config Vars and a worker deployment. A Heroku Deploy button is not included because this Docker-based application needs a container-registry deployment flow; use the documented CLI steps or helper script. No plan or script can guarantee zero platform restarts.
 
----
+## 🚀 One-command VPS deployment
 
-## 🚀 Quick Deployment
-
-> [!CAUTION]
-> ### ⚠️ Important Notice for Heroku Users
-> **Deploying this bot on Heroku is strictly NOT recommended and can lead to immediate app termination or permanent account suspension** due to Heroku's Terms of Service against torrenting, continuous heavy network traffic, and high CPU encoding.
-> 
-> **Supported & Recommended Hosting Platforms:**
-> CBML is heavily optimized for:
-> - **Dedicated VPS / Cloud Servers** (Ubuntu / Debian on Hetzner, Contabo, DigitalOcean, Linode, AWS EC2, Oracle Cloud)
-> - **Docker / Docker Compose Containers** (Local server, HomeLab, Unraid, TrueNAS)
-> - **Alternative Container Clouds**: Koyeb, Render, Railway, CapRover, Fly.io, or Okteto
-
-### Option A: Docker Deployment (Recommended)
+Recommended for the full set of download engines and media tools. Use a fresh supported Ubuntu/Debian VPS and review the deployment script before running it. The included `deploy.vps` script installs system packages and creates a systemd service named `cantarellabots_bot`.
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/abhinai2244/CBML.git
-cd CBML
+sudo apt-get update
+sudo apt-get install -y git
+sudo git clone https://github.com/hemanthbreaker3-hash/HTR-X.git /root/HTR-X
+cd /root/HTR-X
+sudo chmod +x deploy.vps start.sh setpkgs.sh tunnel.sh
+sudo ./deploy.vps
+```
 
-# 2. Configure credentials
-cp configs/config_sample.py config.py
-nano config.py
+If the repository URL or branch differs, replace it with your own repository URL. Before starting the service, configure your own values in `config.py` and make sure the file does not contain credentials copied from someone else's deployment.
 
-# 3. Start containers
+### VPS service commands
+
+```bash
+# Check service status
+sudo systemctl status cantarellabots_bot --no-pager
+
+# Follow live logs
+sudo journalctl -u cantarellabots_bot -f
+
+# Restart after configuration changes
+sudo systemctl restart cantarellabots_bot
+
+# Stop the bot
+sudo systemctl stop cantarellabots_bot
+
+# Start the bot
+sudo systemctl start cantarellabots_bot
+```
+
+The installer expects root privileges and installs system dependencies. Review `deploy.vps` first; do not run deployment scripts from repositories you do not trust.
+
+## 🐳 Docker deployment
+
+From the project root, review `docker-compose.yml`, `Dockerfile`, and `config.py` before building. Ensure persistent volumes and required environment/config files are correctly mapped for your setup.
+
+```bash
+docker compose config
 docker compose up -d --build
+docker compose logs -f
 ```
 
-### Option B: VPS Direct Setup (Ubuntu / Debian)
+To stop the stack:
 
 ```bash
-# 1. Install system dependencies
-sudo apt-get update && sudo apt-get install -y python3-pip ffmpeg aria2 qbittorrent-nox rclone
-
-# 2. Clone and install Python requirements
-git clone https://github.com/abhinai2244/CBML.git
-cd CBML
-pip3 install -r requirements.txt
-
-# 3. Launch Bot
-bash start.sh
+docker compose down
 ```
 
----
+## ⚙️ Configuration
 
-## 🔑 Environment Variables & `config.py`
+The main configuration file is `config.py`. Required settings commonly include:
 
-| Variable | Required | Description |
-| :--- | :---: | :--- |
-| `BOT_TOKEN` | **Yes** | Telegram Bot Token from [@BotFather](https://t.me/BotFather) |
-| `TELEGRAM_API` | **Yes** | Telegram API ID from [my.telegram.org](https://my.telegram.org) |
-| `TELEGRAM_HASH` | **Yes** | Telegram API Hash from [my.telegram.org](https://my.telegram.org) |
-| `OWNER_ID` | **Yes** | Your Telegram User ID |
-| `DATABASE_URL` | Optional | MongoDB Database URI for persistent user configs |
-| `ENABLE_WATERMARK` | Optional | Set `True` to allow watermark pipeline |
-| `ENABLE_COMPRESS` | Optional | Set `True` to allow video compression pipeline |
-| `ENABLE_ENCODE` | Optional | Set `True` to allow video encoding pipeline |
+| Setting | Purpose |
+|---|---|
+| `BOT_TOKEN` | Telegram bot token |
+| `OWNER_ID` | Numeric Telegram user ID of the owner |
+| `TELEGRAM_API` | Telegram API ID |
+| `TELEGRAM_HASH` | Telegram API hash |
+| `DATABASE_URL` | MongoDB URI if database-backed features are enabled |
+| `AUTHORIZED_CHATS` | Optional authorized chat IDs, according to this version's config format |
+| `STREAM_TOKENS` | Optional stream-bot token configuration |
+| `HELPER_TOKENS` | Optional helper-bot tokens |
+| `ENABLE_ENCODE` | Enable or disable encoding features |
+| `ENABLE_COMPRESS` | Enable or disable compression features |
+| `ENABLE_WATERMARK` | Enable or disable watermark features |
 
----
+Check the comments and defaults in `config.py` for the complete list and expected formats. Environment variables override values loaded from `config.py`. Keep secrets out of source control and use Heroku Config Vars for deployed instances.
+
+## 🩺 Troubleshooting
+
+### Service exits immediately
+
+```bash
+sudo journalctl -u cantarellabots_bot -n 200 --no-pager
+```
+
+Check Python syntax, missing dependencies, `config.py`, and the startup script. Fix the first traceback before investigating later errors.
+
+### `OWNER_ID` or configuration errors
+
+Use your own numeric Telegram user ID and verify that each Python assignment in `config.py` has a valid value. For example:
+
+```python
+OWNER_ID = 123456789
+```
+
+Do not leave an assignment incomplete, such as `OWNER_ID =`.
+
+### Heroku worker is not running
+
+```bash
+heroku ps -a YOUR_APP_NAME
+heroku logs --tail -a YOUR_APP_NAME
+```
+
+Confirm that the worker is scaled to one, the image release succeeded, configuration is valid, and the selected dyno has sufficient resources.
+
+### Download or media tools are unavailable
+
+Check whether the required binary is installed and on `PATH` (`ffmpeg`, `aria2c`, `qbittorrent-nox`, `rclone`, `yt-dlp`, or `sabnzbd`). Some features require separate credentials or services.
+
+## 🤝 Contributing and support
+
+- Review existing issues and logs before opening a bug report.
+- Include the exact command, relevant traceback, deployment type, and Python/runtime version.
+- **Remove tokens, session strings, database credentials, and private download links from logs before sharing them.**
+- Follow the repository's license and the rules of the services you connect.
+
+## 📄 License
+
+This project is distributed under the license in [`LICENSE`](LICENSE). Review it before redistributing or deploying modified copies.
 
 ---
 
 <div align="center">
 
-## ⭐ Support & Feature Requests
-
-**If you find this project helpful, please give it a ⭐ Star and 🍴 Fork!**  
-This repository will be actively maintained and updated continuously with new features and optimizations.
-
-> [!TIP]
-> **Have a suggestion, idea, or feature request?**  
-> Send it directly to my Telegram DM: [**@cantarella_wuwa**](https://t.me/cantarella_wuwa).  
-> **I will definitely review and add your requested features for sure!** 🚀
-
----
-
-## 👥 Community & Support
-
-Have questions, suggestions, or want to report a bug? Join our official channels:
-
-[![Telegram Channel](https://img.shields.io/badge/Join-CantarellaBots%20Channel-26A5E4?style=for-the-badge&logo=telegram)](https://t.me/cantarellabots)
-[![Telegram Support](https://img.shields.io/badge/Contact-Tenka%20Izumo-EA4335?style=for-the-badge&logo=telegram)](https://t.me/cantarella_wuwa)
-
-<sub>Crafted with ❤️ by <b>TENKA IZUMO</b> for the <b>CantarellaBots</b> Community.</sub>
+**HTR-X • Mirror smarter. Manage tasks cleanly.**
 
 </div>

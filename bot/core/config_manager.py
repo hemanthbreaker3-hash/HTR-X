@@ -223,8 +223,19 @@ class Config:
 
     @classmethod
     def load(cls):
+        # Load safe file defaults first, then let deployment environment variables
+        # override them. Validate required credentials only after both sources load.
         cls.load_config()
         cls.load_env()
+        for key in ["BOT_TOKEN", "OWNER_ID", "TELEGRAM_API", "TELEGRAM_HASH"]:
+            value = getattr(cls, key)
+            if isinstance(value, str):
+                value = value.strip()
+            if value in (None, "", 0, "0"):
+                raise ValueError(
+                    f"Required configuration {key} is missing. Set it in config.py "
+                    "or as an environment variable."
+                )
 
     @classmethod
     def load_config(cls):
@@ -262,12 +273,6 @@ class Config:
                 if isinstance(legacy_value, str):
                     legacy_value = legacy_value.strip()
                 cls.LEECH_LOG_CHAT = legacy_value
-        for key in ["BOT_TOKEN", "OWNER_ID", "TELEGRAM_API", "TELEGRAM_HASH"]:
-            value = getattr(cls, key)
-            if isinstance(value, str):
-                value = value.strip()
-            if not value:
-                raise ValueError(f"{key} variable is missing!")
 
     @classmethod
     def load_env(cls):
