@@ -209,3 +209,8 @@ This project is distributed under the license in [`LICENSE`](LICENSE). Review it
 - The owner and sudo commands are available in private chat as well as authorized chats. A user authorized in the database can use supported commands in DM.
 - After changing Config Vars, restart the worker and inspect logs for configuration or handler errors.
 - `/addsudo USER_ID` and `/rmsudo USER_ID` accept numeric IDs; they can also target a user by replying to that user's message.
+
+
+## 💻 Laptop deployment
+
+For step-by-step Windows laptop setup and four options (native Windows, Docker, Linux VPS over SSH, or a Linux VM), see [`LAPTOP_DEPLOYMENT.md`](LAPTOP_DEPLOYMENT.md). Windows 7 is legacy and is not guaranteed to support the current dependency stack.
