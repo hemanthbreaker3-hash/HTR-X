@@ -44,6 +44,8 @@ from .button_build import ButtonMaker
 
 
 async def send_message(message, text, buttons=None, block=True, photo=None, **kwargs):
+    # Accept reply_markup passed through kwargs without duplicating the keyword.
+    buttons = kwargs.pop("reply_markup", buttons)
     img_photo = choice(Config.IMAGES) if (photo == "IMAGES" and Config.USE_IMAGES and Config.IMAGES) else (None if photo == "IMAGES" else photo)
     try:
         if img_photo:

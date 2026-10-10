@@ -119,6 +119,7 @@ class Mirror(TaskListener):
         self.is_uphoster = is_uphoster
 
     async def new_event(self):
+        global LOGGER
         if self.is_leech:
             if Config.DISABLE_LEECH:
                 await send_message(
