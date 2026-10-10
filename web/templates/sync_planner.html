@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Track Sync Planner</title><style>
+:root{color-scheme:dark;--bg:#10131b;--card:#1a2030;--line:#30394d;--text:#eef2ff;--muted:#aab4c8;--accent:#7c9cff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px system-ui,sans-serif}
+main{max-width:900px;margin:auto;padding:22px 14px 50px}h1{font-size:24px;margin:0 0 6px}.muted{color:var(--muted)}.file{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin:14px 0}
+h2{font-size:17px;overflow-wrap:anywhere;margin:0 0 12px}.track{display:flex;align-items:center;gap:9px;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}.track label{flex:1;min-width:110px}.track input[type=text]{width:120px;background:#111827;color:var(--text);border:1px solid var(--line);padding:8px;border-radius:7px}
+video{width:100%;max-height:420px;background:#000;border-radius:10px;margin:8px 0 14px}.file-nav{display:flex;gap:8px;align-items:center;justify-content:space-between;margin:8px 0}button{background:var(--accent);color:#071126;border:0;border-radius:8px;padding:10px 13px;font-weight:700;cursor:pointer}button.secondary{background:#30394d;color:var(--text)}button:disabled{opacity:.5}.actions{display:flex;gap:9px;flex-wrap:wrap;position:sticky;bottom:0;background:#10131bee;padding:12px 0}.status{margin:12px 0;padding:10px;border-radius:8px;background:#202a3e}.tag{font-size:12px;color:var(--muted)}
+</style></head><body><main><h1>🎬 Track Sync Planner</h1><p class="muted">Reorder audio and subtitle tracks, toggle tracks, and adjust timing before upload.</p><div id="status" class="status">Loading session…</div><div class="file-nav"><button class="secondary" id="prevFile" onclick="stepFile(-1)">◀ Previous file</button><span id="fileCount" class="tag"></span><button class="secondary" id="nextFile" onclick="stepFile(1)">Next file ▶</button></div><div id="files"></div><div class="actions"><button onclick="save()">💾 Save & Continue</button><button class="secondary" onclick="location.reload()">↻ Reload</button></div></main>
+<script>
+const token=new URLSearchParams(location.search).get('token');let session;let activeFile=0;
+function say(t){document.getElementById('status').textContent=t}
+async function api(url,body){const r=await fetch(url+(url.includes('?')?'&':'?')+'token='+encodeURIComponent(token),{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify({...body,token}):undefined});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
+function stepFile(delta){if(!session||!session.files.length)return;activeFile=(activeFile+delta+session.files.length)%session.files.length;render()}
+function moveTrack(fi,type,idx,delta){const f=session.files[fi],order=f[type+'_order'],to=idx+delta;if(to<0||to>=order.length)return;[order[idx],order[to]]=[order[to],order[idx]];render()}
+function render(){const root=document.getElementById('files');root.innerHTML='';const nav=session.files.length>1;document.getElementById('prevFile').disabled=!nav;document.getElementById('nextFile').disabled=!nav;document.getElementById('fileCount').textContent=`File ${activeFile+1} of ${session.files.length}`;session.files.forEach((f,fi)=>{if(fi!==activeFile)return;const card=document.createElement('section');card.className='file';const h=document.createElement('h2');h.textContent=(fi+1)+'. '+f.name;card.append(h);const player=document.createElement('video');player.controls=true;player.preload='metadata';player.src='/api/sync-planner/preview?token='+encodeURIComponent(token)+'&file='+fi;player.onerror=()=>say('Preview unavailable for this format in your browser. You can still save track edits.');card.append(player);
+for(const [type,label] of [['audio','🎵 Audio'],['sub','💬 Subtitles']]){const head=document.createElement('h3');head.textContent=label;card.append(head);const tracks=f[type+'_tracks'],order=f[type+'_order'],selected=f['selected_'+type];order.forEach((trackId,pos)=>{const t=tracks[trackId],row=document.createElement('div');row.className='track';const check=document.createElement('input');check.type='checkbox';check.checked=selected.includes(trackId);check.onchange=()=>{if(check.checked){if(!selected.includes(trackId))selected.push(trackId)}else f['selected_'+type]=selected.filter(x=>x!==trackId);render()};
+row.draggable=true;row.ondragstart=e=>{e.dataTransfer.setData('text/plain',String(pos));e.dataTransfer.effectAllowed='move'};row.ondragover=e=>{e.preventDefault();row.style.outline='1px dashed var(--accent)'};row.ondragleave=()=>row.style.outline='';row.ondrop=e=>{e.preventDefault();row.style.outline='';const from=Number(e.dataTransfer.getData('text/plain'));const orderNow=f[type+'_order'];if(Number.isInteger(from)&&from>=0&&from<orderNow.length&&from!==pos){const moved=orderNow.splice(from,1)[0];orderNow.splice(pos,0,moved);render()}};const desc=document.createElement('label');desc.textContent=`${pos+1}. ${t.full_lang||t.short_lang||'Unknown'} · ${t.title||'Untitled track'}`;
+const up=document.createElement('button');up.className='secondary';up.textContent='↑';up.disabled=pos===0;up.onclick=()=>moveTrack(fi,type,pos,-1);
+const down=document.createElement('button');down.className='secondary';down.textContent='↓';down.disabled=pos===order.length-1;down.onclick=()=>moveTrack(fi,type,pos,1);
+const title=document.createElement('input');title.type='text';title.placeholder='Track title';title.value=t.title||'';title.onchange=()=>t.title=title.value;
+const lang=document.createElement('input');lang.type='text';lang.placeholder='Language';lang.value=t.full_lang||'';lang.onchange=()=>{t.full_lang=lang.value;t.language=lang.value};
+const offset=document.createElement('input');offset.type='number';offset.step='0.01';offset.placeholder='Offset (sec)';offset.title='Timing offset in seconds';offset.style.width='105px';offset.value=Number(t.offset_seconds||0);offset.onchange=()=>t.offset_seconds=Math.max(-86400,Math.min(86400,Number(offset.value)||0));
+const duration=document.createElement('input');duration.type='number';duration.step='0.1';duration.min='0';duration.placeholder='Duration (sec)';duration.title='Optional track duration limit';duration.style.width='110px';duration.value=t.duration_seconds??'';duration.onchange=()=>t.duration_seconds=duration.value===''?null:Math.max(0,Math.min(604800,Number(duration.value)||0));
+row.append(check,desc,up,down,title,lang,offset,duration);card.append(row)});}
+if(session.files.length>1){const all=document.createElement('button');all.className='secondary';all.textContent='Apply edits to matching track positions in all files';all.onclick=()=>applyAll(fi);card.append(all)}
+root.append(card)})}
+function applyAll(fi){
+  const source=session.files[fi];
+  for(const f of session.files){
+    if(f===source)continue;
+    for(const type of ['audio','sub']){
+      const srcOrder=source[type+'_order'];
+      const srcTracks=source[type+'_tracks'];
+      const destTracks=f[type+'_tracks'];
+      const destOrder=f[type+'_order'];
+      const sourceSelected=new Set(source['selected_'+type]);
+      // Apply only by matching position. A missing position is left untouched;
+      // tracks beyond the source file's count are preserved as they were.
+      for(let position=0;position<Math.min(srcOrder.length,destOrder.length);position++){
+        const sourceId=srcOrder[position];
+        const destId=destOrder[position];
+        const st=srcTracks[sourceId], dt=destTracks[destId];
+        if(!st||!dt)continue;
+        dt.offset_seconds=st.offset_seconds||0;
+        dt.duration_seconds=st.duration_seconds??null;
+        dt.title=st.title||'';
+        dt.full_lang=st.full_lang||'';
+        dt.language=st.language||st.full_lang||'';
+        // Copy enabled/disabled state for this position only.
+        const selected=f['selected_'+type];
+        const wasSelected=selected.includes(destId);
+        const shouldSelect=sourceSelected.has(sourceId);
+        if(shouldSelect&&!wasSelected)selected.push(destId);
+        if(!shouldSelect&&wasSelected)f['selected_'+type]=selected.filter(id=>id!==destId);
+      }
+      // Keep the destination file's own ordering. This action copies settings
+      // by visible position only; it never reorders or removes destination tracks.
+    }
+  }
+  render();
+}
+
+async function load(){if(!token){say('Missing session token. Open the link from your bot DM.');return}try{session=await api('/api/sync-planner/data');render();say('Session loaded. Changes apply when you save.')}catch(e){say(e.message)}}
+async function save(){try{say('Saving changes…');await api('/api/sync-planner/save',{files:session.files.map(f=>({audio_order:f.audio_order,sub_order:f.sub_order,selected_audio:f.selected_audio,selected_sub:f.selected_sub,audio_tracks:f.audio_tracks,sub_tracks:f.sub_tracks}))});say('✅ Saved. Track processing will continue in the bot.')}catch(e){say(e.message)}}
+load();
+</script></body></html>

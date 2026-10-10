@@ -8,12 +8,14 @@ except ImportError:
 
 
 from asyncio import new_event_loop, set_event_loop
+import secrets
 
 bot_loop = new_event_loop()
 set_event_loop(bot_loop)
 
 from asyncio import sleep
 from importlib import import_module
+import os
 from os import environ
 from re import compile as re_compile
 from html import escape
@@ -952,3 +954,107 @@ async def server_error(request: Request, exc: Exception):
     if request.url.path.startswith(("/app/files/", "/api/", "/stream/", "/dl/")):
         return JSONResponse({"error": "Internal server error"}, status_code=500)
     return HTMLResponse("<h1>500: Internal server error</h1>", status_code=500)
+
+
+@app.get("/app/sync-planner", response_class=HTMLResponse)
+async def sync_planner_page(request: Request):
+    response = templates.TemplateResponse(request, "sync_planner.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+def _find_track_sync_session(token: str):
+    if not token:
+        return None
+    try:
+        from bot.helper.ext_utils.track_manager import track_manager_sessions
+        for session in track_manager_sessions.values():
+            if session.get("web_token") and secrets.compare_digest(
+                str(session["web_token"]), str(token)
+            ):
+                return session
+    except Exception as e:
+        LOGGER.warning(f"Track sync session lookup failed: {e}")
+    return None
+
+
+@app.get("/api/sync-planner/preview")
+async def sync_planner_preview(token: str = "", file: int = 0):
+    """Serve a media file only to the owner of its live, unguessable planner token."""
+    from fastapi.responses import FileResponse
+    session = _find_track_sync_session(token)
+    if not session:
+        return JSONResponse({"error": "Track sync session expired or invalid."}, status_code=404)
+    files = session.get("files", [])
+    if file < 0 or file >= len(files):
+        return JSONResponse({"error": "File not found."}, status_code=404)
+    path = files[file].get("path")
+    if not path or not os.path.isfile(path):
+        return JSONResponse({"error": "Preview file is no longer available."}, status_code=404)
+    return FileResponse(path, filename=os.path.basename(path), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/sync-planner/data")
+async def get_sync_planner_data(token: str = ""):
+    session = _find_track_sync_session(token)
+    if not session:
+        return JSONResponse({"error": "Track sync session expired or invalid. Start the command again."}, status_code=404)
+    files = []
+    for f in session.get("files", []):
+        item = {k: v for k, v in f.items() if k not in ("path",)}
+        for key in ("selected_audio", "selected_sub"):
+            item[key] = sorted(item.get(key, []))
+        files.append(item)
+    return JSONResponse({"mid": session.get("mid"), "files": files})
+
+
+@app.post("/api/sync-planner/save")
+async def save_sync_planner_data(request: Request):
+    body = await request.json()
+    session = _find_track_sync_session(str(body.get("token", "")))
+    if not session:
+        return JSONResponse({"error": "Track sync session expired or invalid. Start the command again."}, status_code=404)
+    incoming = body.get("files")
+    current = session.get("files", [])
+    if not isinstance(incoming, list) or len(incoming) != len(current):
+        return JSONResponse({"error": "Invalid file list."}, status_code=400)
+    for current_file, edited in zip(current, incoming):
+        for typ in ("audio", "sub"):
+            tracks_key = f"{typ}_tracks"
+            order_key = f"{typ}_order"
+            selected_key = f"selected_{typ}"
+            tracks = current_file.get(tracks_key, [])
+            try:
+                order = [int(i) for i in edited.get(order_key, [])]
+                selected = {int(i) for i in edited.get(selected_key, [])}
+                if sorted(order) != list(range(len(tracks))) or not selected.issubset(set(range(len(tracks)))):
+                    raise ValueError("Invalid track order or selection")
+                current_file[order_key] = order
+                current_file[selected_key] = selected
+                # Only allow editable metadata fields; preserve stream indexes and paths.
+                edited_tracks = edited.get(tracks_key, [])
+                if len(edited_tracks) != len(tracks):
+                    raise ValueError("Invalid track metadata")
+                for original, changed in zip(tracks, edited_tracks):
+                    original["title"] = str(changed.get("title", original.get("title", "")))[:200]
+                    original["full_lang"] = str(changed.get("full_lang", original.get("full_lang", "")))[:80]
+                    original["short_lang"] = str(original.get("short_lang", ""))[:20]
+                    try:
+                        offset = float(changed.get("offset_seconds", original.get("offset_seconds", 0)) or 0)
+                        original["offset_seconds"] = max(-86400, min(86400, offset))
+                    except (TypeError, ValueError):
+                        original["offset_seconds"] = 0
+                    try:
+                        duration = changed.get("duration_seconds", original.get("duration_seconds"))
+                        original["duration_seconds"] = None if duration in (None, "") else max(0, min(604800, float(duration)))
+                    except (TypeError, ValueError):
+                        original["duration_seconds"] = None
+            except (TypeError, ValueError):
+                return JSONResponse({"error": "Invalid track edits submitted."}, status_code=400)
+    session["web_saved"] = True
+    future = session.get("future")
+    if future is not None and not future.done():
+        future.set_result(True)
+    return JSONResponse({"ok": True, "message": "Track settings saved; processing will continue"})

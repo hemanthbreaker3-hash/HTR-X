@@ -132,15 +132,16 @@ async def dapi_command(_, message):
     if len(args) < 2:
         return await send_message(
             message,
-            "Usage: <code>/dapi https://domain.com/file/123 [-tm|-tc|-sync]</code>\n"
+            "Usage: <code>/dapi https://domain.com/file/123 [-tm|-tc|-sync|-tch]</code>\n"
             "• <code>-tm</code>: select/reorder audio and subtitle tracks\n"
             "• <code>-tc</code>: edit audio/subtitle track title and language\n"
-            "• <code>-sync</code>: open the track planner before upload; navigate files and save choices",
+            "• <code>-sync</code>: open the track sync planner before upload\n"
+            "• <code>-tch</code>: convert audio to AAC 7.1 where supported",
         )
 
     raw_args = args[1].strip().split()
     original = raw_args[0]
-    task_flags = [flag for flag in raw_args[1:] if flag in ("-tm", "-tc", "-sync")]
+    task_flags = [flag for flag in raw_args[1:] if flag in ("-tm", "-tc", "-sync", "-tch")]
     parsed = urlparse(original if "://" in original else f"https://{original}")
     domain = _domain(parsed.netloc)
     mapping = _api_map(message.from_user.id)

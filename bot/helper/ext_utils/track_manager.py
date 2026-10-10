@@ -3,6 +3,7 @@ from asyncio import wait_for, TimeoutError as AsyncTimeoutError
 from html import escape
 from re import sub
 from contextlib import suppress
+from secrets import token_urlsafe
 from os import path as ospath, walk
 
 from aiofiles.os import remove, path as aiopath
@@ -94,7 +95,7 @@ def format_tm_ui(session):
         page_files = files[start_i:end_i]
 
         lines = [
-            "<b>📂 Track Manager - Files List</b>\n",
+            "<b>🎬 Track Sync Planner</b>\n" if session.get("sync_planner") else "<b>📂 Track Manager - Files List</b>\n",
             f"• <b>Total Files:</b> {total_files}",
             f"• <b>Page:</b> {page}/{total_pages}\n",
             "<b>Track Summary:</b>",
@@ -168,12 +169,12 @@ def format_tm_ui(session):
         order = cur_file["audio_order"] if is_aud else cur_file["sub_order"]
         selected = cur_file["selected_audio"] if is_aud else cur_file["selected_sub"]
 
-        mode_title = "🎵 Audio Track Selection" if is_aud else "💬 Subtitle Track Selection"
+        mode_title = "🎵 Audio Track Sync / Selection" if is_aud and session.get("sync_planner") else ("💬 Subtitle Track Sync / Selection" if session.get("sync_planner") else ("🎵 Audio Track Selection" if is_aud else "💬 Subtitle Track Selection"))
 
         lines = [
             f"<b>{mode_title}</b>\n",
+            "<i>Use ⬆️/⬇️ to move tracks; save to apply before upload.</i>\n" if session.get("sync_planner") else "",
             f"• <b>File:</b> <code>{escape(fname)}</code>\n",
-            *( [f"• <b>Sync mode:</b> planner before upload\n"] if session.get("sync_preview") else [] ),
             "<b>Available Tracks:</b>",
         ]
 
@@ -208,14 +209,6 @@ def format_tm_ui(session):
                 buttons.data_button(f"#{display_pos + 1} ⬆️", up_cb, position="f_body")
                 buttons.data_button(f"#{display_pos + 1} ⬇️", dn_cb, position="f_body")
 
-        # File navigation stays available while editing multi-file jobs.
-        if is_multi:
-            prev_idx = (cur_idx - 1) % total_files
-            next_idx = (cur_idx + 1) % total_files
-            buttons.data_button("⬅️ Previous File", f"tmcb file {mid} {prev_idx}", position="header")
-            buttons.data_button(f"File {cur_idx + 1}/{total_files}", "tmcb dummy", position="header")
-            buttons.data_button("Next File ➡️", f"tmcb file {mid} {next_idx}", position="header")
-
         # Footer controls
         if is_aud:
             buttons.data_button("💬 Subtitles", f"tmcb view {mid} sub", position="footer")
@@ -224,12 +217,12 @@ def format_tm_ui(session):
 
         if is_multi:
             buttons.data_button("🔄 Apply to All", f"tmcb apply_all {mid}", position="footer")
-            buttons.data_button("◀️ File List", f"tmcb back {mid}", position="footer")
+            buttons.data_button("◀️ Back", f"tmcb back {mid}", position="footer")
 
-        buttons.data_button("✅ Save & Continue", f"tmcb done {mid}", position="footer")
+        buttons.data_button("✅ Done", f"tmcb done {mid}", position="footer")
 
         footer_cols = 3 if is_multi else 2
-        return caption, buttons.build_menu(b_cols=1, h_cols=3 if is_multi else 1, fb_cols=2, f_cols=footer_cols)
+        return caption, buttons.build_menu(b_cols=1, fb_cols=2, f_cols=footer_cols)
 
 
 @new_task
@@ -527,6 +520,8 @@ async def proceed_track_manager(listener, dl_path, gid):
                 "full_lang": s.get("tags", {}).get("language", ""),
                 "original_title": s.get("tags", {}).get("title", ""),
                 "original_lang": s.get("tags", {}).get("language", ""),
+                "offset_seconds": 0.0,
+                "duration_seconds": None,
             }
             for s in aud_streams
         ]
@@ -540,6 +535,8 @@ async def proceed_track_manager(listener, dl_path, gid):
                 "full_lang": s.get("tags", {}).get("language", ""),
                 "original_title": s.get("tags", {}).get("title", ""),
                 "original_lang": s.get("tags", {}).get("language", ""),
+                "offset_seconds": 0.0,
+                "duration_seconds": None,
             }
             for s in sub_streams
         ]
@@ -572,18 +569,27 @@ async def proceed_track_manager(listener, dl_path, gid):
         "gid": gid,
         "is_multi": len(files_data) > 1,
         "track_change": bool(getattr(listener, "track_changer", False)),
-        "sync_preview": bool(getattr(listener, "sync_track_preview", False)),
+        "sync_planner": bool(getattr(listener, "sync_planner", False)),
         "files": files_data,
         "current_file_idx": 0,
         "view_mode": "list" if len(files_data) > 1 else "audio",
         "page": 1,
         "page_size": 5,
         "future": fut,
+        "web_token": token_urlsafe(24),
     }
 
     track_manager_sessions[mid] = session
 
     caption, markup = format_tm_ui(session)
+    try:
+        from ...core.config_manager import Config
+        base_url = (getattr(Config, "BASE_URL", "") or "").rstrip("/")
+        if base_url and session.get("sync_planner"):
+            session["web_url"] = f"{base_url}/app/sync-planner?token={session['web_token']}"
+            caption += f"\\n\\n🌐 <a href=\"{session['web_url']}\">Open Web Track Sync Planner</a>"
+    except Exception as e:
+        LOGGER.warning(f"Could not build web sync planner link: {e}")
 
     try:
         msg = await send_message(listener.message, caption, markup)
@@ -593,6 +599,19 @@ async def proceed_track_manager(listener, dl_path, gid):
         return dl_path
 
     session["msg"] = msg
+
+    # Deliver the private web planner link to the task owner, using BASE_URL.
+    if session.get("sync_planner") and session.get("web_url"):
+        try:
+            await TgClient.bot.send_message(
+                user_id,
+                "🌐 <b>Track Sync Planner</b>\\n\\n"
+                "Open your private web planner to reorder audio/subtitle tracks before upload:\\n"
+                f"<a href=\"{session['web_url']}\">Open Track Sync Planner</a>\\n\\n"
+                "Keep this link private; it is tied to your active task."
+            )
+        except Exception as e:
+            LOGGER.warning(f"Could not DM track sync planner link to {user_id}: {e}")
 
     try:
         res = await wait_for(fut, timeout=600)
@@ -617,7 +636,7 @@ async def proceed_track_manager(listener, dl_path, gid):
         sel_aud = f["selected_audio"]
         sel_sub = f["selected_sub"]
 
-        # Check if modification is needed
+        # Detect actual edits, including per-track timing changes.
         aud_modified = (
             len(sel_aud) != len(aud_tracks)
             or aud_order != list(range(len(aud_tracks)))
@@ -626,47 +645,112 @@ async def proceed_track_manager(listener, dl_path, gid):
             len(sel_sub) != len(sub_tracks)
             or sub_order != list(range(len(sub_tracks)))
         )
-
         meta_modified = bool(session.get("track_change")) and any(
             track.get("title") != (track.get("original_title") or "")
             or track.get("full_lang") != (track.get("original_lang") or "")
             for track in aud_tracks + sub_tracks
         )
-        if not aud_modified and not sub_modified and not meta_modified:
+        timing_modified = any(
+            abs(float(t.get("offset_seconds") or 0)) > 0.0001
+            or t.get("duration_seconds") not in (None, "")
+            for t in aud_tracks + sub_tracks
+        )
+        convert_71 = bool(getattr(listener, "track_channel_71", False))
+        if not aud_modified and not sub_modified and not meta_modified and not timing_modified and not convert_71:
             continue
 
         out_path = f"{fp}.tm_out.mkv"
-        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", fp, "-map", "0:v?"]
+        cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", fp]
 
-        # Map selected audio streams in order
-        for pos in aud_order:
-            if pos in sel_aud:
-                s_idx = aud_tracks[pos]["index"]
-                cmd.extend(["-map", f"0:{s_idx}"])
+        # Use a separate input for each adjusted subtitle so timing options are
+        # isolated to that stream; unedited streams still map from input zero.
+        subtitle_input_indices = {}
+        next_input_index = 1
+        for pos in sub_order:
+            if pos not in sel_sub:
+                continue
+            track = sub_tracks[pos]
+            offset = float(track.get("offset_seconds") or 0)
+            duration = track.get("duration_seconds")
+            if abs(offset) > 0.0001 or duration not in (None, ""):
+                if abs(offset) > 0.0001:
+                    cmd.extend(["-itsoffset", f"{offset:.6f}"])
+                if duration not in (None, ""):
+                    cmd.extend(["-t", f"{max(0.001, float(duration)):.6f}"])
+                cmd.extend(["-i", fp])
+                subtitle_input_indices[pos] = next_input_index
+                next_input_index += 1
 
-        # Map selected subtitle streams in order
+        cmd.extend(["-map", "0:v?"])
+        filter_parts = []
+        output_audio_index = 0
+        output_sub_index = 0
+
+        # Audio tracks are mapped in the user's chosen order. When timing is
+        # edited, use per-track filters so the saved offsets/duration affect output.
+        selected_audio_positions = [p for p in aud_order if p in sel_aud]
+        audio_filter_needed = any(
+            abs(float(aud_tracks[p].get("offset_seconds") or 0)) > 0.0001
+            or aud_tracks[p].get("duration_seconds") not in (None, "")
+            for p in selected_audio_positions
+        )
+        for pos in selected_audio_positions:
+            track = aud_tracks[pos]
+            stream_idx = track["index"]
+            if audio_filter_needed:
+                label = f"aout{output_audio_index}"
+                filters = [f"[0:{stream_idx}]"]
+                offset = float(track.get("offset_seconds") or 0)
+                duration = track.get("duration_seconds")
+                chain = []
+                if offset < 0:
+                    chain.append(f"atrim=start={abs(offset):.6f}")
+                    chain.append("asetpts=PTS-STARTPTS")
+                if duration not in (None, ""):
+                    chain.append(f"atrim=duration={max(0.001, float(duration)):.6f}")
+                if offset > 0:
+                    delay_ms = int(round(offset * 1000))
+                    chain.append(f"adelay={delay_ms}:all=1")
+                if chain:
+                    filter_parts.append(filters[0] + ",".join(chain) + f"[{label}]")
+                else:
+                    filter_parts.append(filters[0] + f"anull[{label}]")
+                cmd.extend(["-map", f"[{label}]"])
+            else:
+                cmd.extend(["-map", f"0:{stream_idx}"])
+            output_audio_index += 1
+
         for pos in sub_order:
             if pos in sel_sub:
-                s_idx = sub_tracks[pos]["index"]
-                cmd.extend(["-map", f"0:{s_idx}"])
+                input_idx = subtitle_input_indices.get(pos, 0)
+                cmd.extend(["-map", f"{input_idx}:{sub_tracks[pos]['index']}"])
+                output_sub_index += 1
+
+        if filter_parts:
+            cmd.extend(["-filter_complex", ";".join(filter_parts)])
 
         if session.get("track_change"):
             out_a = 0
-            for pos in aud_order:
-                if pos in sel_aud:
-                    track = aud_tracks[pos]
-                    cmd.extend(["-metadata:s:a:" + str(out_a), "title=" + track.get("title", "")])
-                    cmd.extend(["-metadata:s:a:" + str(out_a), "language=" + (track.get("full_lang") or "und")])
-                    out_a += 1
+            for pos in selected_audio_positions:
+                track = aud_tracks[pos]
+                cmd.extend([f"-metadata:s:a:{out_a}", "title=" + track.get("title", "")])
+                cmd.extend([f"-metadata:s:a:{out_a}", "language=" + (track.get("full_lang") or "und")])
+                out_a += 1
             out_s = 0
             for pos in sub_order:
                 if pos in sel_sub:
                     track = sub_tracks[pos]
-                    cmd.extend(["-metadata:s:s:" + str(out_s), "title=" + track.get("title", "")])
-                    cmd.extend(["-metadata:s:s:" + str(out_s), "language=" + (track.get("full_lang") or "und")])
+                    cmd.extend([f"-metadata:s:s:{out_s}", "title=" + track.get("title", "")])
+                    cmd.extend([f"-metadata:s:s:{out_s}", "language=" + (track.get("full_lang") or "und")])
                     out_s += 1
 
-        cmd.extend(["-c", "copy", out_path])
+        if convert_71:
+            cmd.extend(["-c:v", "copy", "-c:s", "copy", "-c:a", "aac", "-ac:a", "8", "-channel_layout:a", "7.1", "-b:a", "640k"])
+        elif audio_filter_needed:
+            cmd.extend(["-c:v", "copy", "-c:s", "copy", "-c:a", "aac", "-b:a", "192k"])
+        else:
+            cmd.extend(["-c", "copy"])
+        cmd.append(out_path)
 
         res_code, err, code = await cmd_exec(cmd)
         if code == 0 and await aiopath.exists(out_path):

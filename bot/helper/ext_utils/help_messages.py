@@ -234,14 +234,13 @@ Apply custom title, artist, audio and subtitle language tags.
 track_manager_help = """<b>Audio & Subtitle Track Manager:</b> -tm
 
 <code>/cmd link -tm</code> — select/reorder tracks\n<code>/cmd link -tc</code> — edit audio/subtitle title and language
-<code>/cmd link -sync</code> — open the planner before upload and switch between files
+<code>/cmd link -sync</code> — open the track sync planner before upload
+<code>/cmd link -tch</code> — convert audio to AAC 7.1 where supported
 <code>/cmd link -tr</code>
 <code>/cmd link -track</code>
 
 <blockquote>Opens an interactive visual menu to reorder (arrange) audio tracks and select or remove unwanted audio/subtitle streams before uploading.
-• Supports individual file track editing or batch <b>Apply to All</b>.
-• Multi-file jobs include Previous/Next navigation and Save & Continue.
-• Sync mode currently opens the track planner; browser playback/stream-link DM preview is not yet wired.</blockquote>"""
+• Supports individual file track editing or batch <b>Apply to All</b>.</blockquote>"""
 
 MIRROR_HELP_DICT = {
     "main": mirror,
