@@ -106,11 +106,29 @@ async def get_download_status(download):
     )
 
 
+# Per-status-message refresh throttle: one refresh per 3 seconds.
+_status_refresh_last = {}
+_STATUS_REFRESH_COOLDOWN = 3.0
+
+
 @new_task
 async def status_pages(_, query):
     data = query.data.split()
     key = int(data[1])
     if data[2] == "ref":
+        now = time()
+        last = _status_refresh_last.get(key, 0.0)
+        remaining = _STATUS_REFRESH_COOLDOWN - (now - last)
+        if remaining > 0:
+            try:
+                await query.answer(
+                    f"⏳ Please wait {max(1, int(remaining + 0.99))} seconds before refreshing again.",
+                    show_alert=True,
+                )
+            except QueryIdInvalid:
+                pass
+            return
+        _status_refresh_last[key] = now
         await update_status_message(key, force=True)
     elif data[2] in ["nex", "pre"]:
         async with task_dict_lock:

@@ -214,3 +214,9 @@ This project is distributed under the license in [`LICENSE`](LICENSE). Review it
 ## 💻 Laptop deployment
 
 For step-by-step Windows laptop setup and four options (native Windows, Docker, Linux VPS over SSH, or a Linux VM), see [`LAPTOP_DEPLOYMENT.md`](LAPTOP_DEPLOYMENT.md). Windows 7 is legacy and is not guaranteed to support the current dependency stack.
+
+## Heroku deployment reliability and policy
+
+Heroku deployment does not guarantee immunity from suspension. Keep the application within Heroku's current Acceptable Use Policy and Terms; do not use deployment configuration to evade enforcement. In particular, verify that the app's file-transfer/leeching use case is permitted before deploying it there.
+
+For responsiveness and reliability, configure health checks where applicable, keep secrets in Config Vars, avoid running multiple worker dynos against the same polling Telegram bot token unless the bot architecture supports it, and use a supported Python runtime. Use logs to diagnose `FloodWait` and connection timeouts; the bot should honor Telegram's requested wait rather than retrying aggressively.
