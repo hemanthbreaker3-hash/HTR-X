@@ -1,6 +1,6 @@
 FROM mysterysd/wzmlx:wzadv
 COPY --from=mysterysd/wzmlx:m-tools /usr/local /usr/local
-COPY --from=node:20-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
 
 WORKDIR /usr/src/app
