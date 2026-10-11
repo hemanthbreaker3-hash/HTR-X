@@ -274,30 +274,12 @@ class HypertgUpload(HypertgTransfer):
                         pass
 
     async def _send_with_retry(self, send_func, **kwargs):
-        # Flood waits are server-directed and may need a long wait; transient
-        # MTProto/network timeouts get a bounded retry so uploads cannot hang forever.
-        transient_retries = 3
-        attempt = 0
         while True:
             try:
                 return await send_func(**kwargs)
             except (FloodWait, FloodPremiumWait) as f:
                 LOGGER.warning(f"HypertgUL flood {f.value}s on {self._up_file}")
                 await sleep(f.value + 1)
-            except (TimeoutError, OSError, ConnectionError) as e:
-                attempt += 1
-                if attempt > transient_retries:
-                    LOGGER.error(
-                        f"HypertgUL Telegram send timed out after {transient_retries} retries "
-                        f"for {self._up_file}: {type(e).__name__}: {e}"
-                    )
-                    raise
-                delay = min(2 ** attempt, 10)
-                LOGGER.warning(
-                    f"HypertgUL transient Telegram send error ({attempt}/{transient_retries}) "
-                    f"for {self._up_file}: {e}; retrying in {delay}s"
-                )
-                await sleep(delay)
 
     async def _try_send(self, key, client, kwargs):
         try:

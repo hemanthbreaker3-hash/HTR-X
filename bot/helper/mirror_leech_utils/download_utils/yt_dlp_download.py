@@ -176,11 +176,20 @@ def probe_youtube(link, options):
     )
     if options.get("cookiefile"):
         msg += f"\n\nCookie file: {describe_cookie_report(ensure_cookie_file(options['cookiefile']))}"
-    msg += (
-        "\n\nUsual causes: cookies expired/rotated (re-export from a private window), "
-        "JS runtime/solver not working (deno/node + matching yt-dlp-ejs), or YouTube forcing "
-        "SABR for this server IP (try another IP/proxy)."
-    )
+    lower_report = "\n".join(collected).lower()
+    causes = []
+    if "no longer valid" in lower_report or "cookies" in lower_report and "rotated" in lower_report:
+        causes.append("The saved YouTube cookies appear expired/rotated. Export a fresh cookies.txt from a private browser session where you are signed in, then upload it again.")
+    if "login_required" in lower_report or "sign in to confirm" in lower_report or "account cookies" in lower_report:
+        causes.append("YouTube requires authentication for this request; verify the fresh cookie file works with yt-dlp --cookies cookies.txt --list-formats URL.")
+    if "po token" in lower_report or "sabr" in lower_report or "no downloadable" in lower_report:
+        causes.append("YouTube may be serving SABR/PO-token protected streams. Deno solves supported JavaScript challenges but does not itself provide a YouTube PO token; update yt-dlp/yt-dlp-ejs and use a supported PO-token provider if required.")
+    if "js runtime" in lower_report or "jsc" in lower_report or "challenge" in lower_report:
+        causes.append("Check that Deno is executable in the running container and that yt-dlp-ejs matches the installed yt-dlp version.")
+    if not causes:
+        causes.append("Check the complete yt-dlp log, current yt-dlp/yt-dlp-ejs versions, cookie validity, and whether the video is publicly playable from this server.")
+    msg += "\n\nLikely causes and next steps:\n" + "\n".join(f"• {cause}" for cause in causes)
+    msg += "\n\nNote: no client fallback can guarantee streams when YouTube rejects authentication or requires a PO token. The bot will not treat storyboard-only formats as downloadable video."
     raise YtProbeError(msg)
 
 

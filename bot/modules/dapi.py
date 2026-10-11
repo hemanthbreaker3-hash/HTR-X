@@ -7,11 +7,9 @@ from urllib.parse import quote, urlparse
 from niquests import AsyncSession
 from pyrogram.enums import ChatType
 from pyrogram.filters import command, private
-from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.handlers import MessageHandler
 
 from .. import bot_loop, user_data
-from ..core.config_manager import Config
 from ..core.tg_client import TgClient
 from ..helper.ext_utils.bot_utils import new_task
 from ..helper.ext_utils.db_handler import database
@@ -20,8 +18,6 @@ from ..helper.telegram_helper.message_utils import send_message
 from .mirror_leech import Mirror
 
 _STORE_KEY = "DLAPI"
-_PENDING = {}
-_GLOBAL_KEY = "DLAPI_GLOBAL"
 _LINK_KEYS = (
     "cloud_resume", "download", "download_url", "direct_link", "direct",
     "url", "link", "file_url", "src", "source", "result",
@@ -69,160 +65,6 @@ def _extract_links(value):
     return list(dict.fromkeys(found))
 
 
-def _is_admin(uid):
-    try:
-        sudo = {int(x.strip()) for x in str(Config.SUDO_USERS).split() if x.strip().isdigit()}
-    except Exception:
-        sudo = set()
-    return uid == Config.OWNER_ID or uid in sudo
-
-
-def _global_map():
-    return user_data.setdefault(Config.OWNER_ID, {}).setdefault(_GLOBAL_KEY, {})
-
-
-def _manager_keyboard(uid):
-    rows = [[InlineKeyboardButton("➕ Add API", callback_data=f"dlapi:add:{uid}")],
-            [InlineKeyboardButton("📋 List APIs", callback_data=f"dlapi:list:{uid}")]]
-    if _is_admin(uid):
-        rows.append([InlineKeyboardButton("🌐 Global API settings", callback_data=f"dlapi:global:{uid}")])
-    return InlineKeyboardMarkup(rows)
-
-
-async def resolve_api_url(uid, url):
-    """Resolve one matching URL through a personal or enabled global API; return URL list or None."""
-    parsed = urlparse(url if "://" in url else f"https://{url}")
-    domain = _domain(parsed.netloc)
-    personal = _api_map(uid).get(domain)
-    global_entry = _global_map().get(domain)
-    template = personal
-    if isinstance(global_entry, dict):
-        if global_entry.get("global"):
-            template = global_entry.get("template")
-        elif not template and uid == Config.OWNER_ID:
-            template = global_entry.get("template")
-    elif isinstance(global_entry, str) and not template:
-        template = global_entry
-    if not template:
-        return None
-    encoded = quote(url, safe="")
-    api_url = template.replace("{url}", encoded) if "{url}" in template else f"{template}{encoded}"
-    async with AsyncSession(timeout=180) as session:
-        response = await session.get(api_url, allow_redirects=True)
-        response.raise_for_status()
-        try:
-            payload = response.json()
-        except Exception:
-            payload = response.text
-    return _extract_links(payload)
-
-
-@new_task
-async def dlapi_callback(_, query):
-    parts = (query.data or "").split(":")
-    if len(parts) < 3:
-        return await query.answer("Invalid action", show_alert=True)
-    action, target = parts[1], int(parts[2])
-    if query.from_user.id != target and not _is_admin(query.from_user.id):
-        return await query.answer("This menu belongs to another user.", show_alert=True)
-    if action == "add":
-        _PENDING[query.from_user.id] = {"target": target, "global": False}
-        await query.message.reply_text("Send API mapping as <code>domain.com=https://api.example/api?url=</code>.\nFor example: <code>gdflix.dev=https://api.example/api?url=</code>", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Cancel", callback_data=f"dlapi:cancel:{target}")]]))
-    elif action == "global":
-        _PENDING[query.from_user.id] = {"target": Config.OWNER_ID, "global": True}
-        await query.message.reply_text("Send a global mapping as <code>domain.com=https://api.example/api?url=</code>. It will apply to all users once enabled.\nUse <code>/dlapi global domain.com=on</code> or <code>/dlapi global domain.com=off</code> to toggle.")
-    elif action == "list":
-        mapping = _api_map(target)
-        global_mapping = _global_map() if _is_admin(query.from_user.id) else {}
-        lines = ["<b>Download API mappings</b>"]
-        rows = []
-        for domain, template in mapping.items():
-            lines.append(f"• <code>{escape(domain)}</code> → <code>{escape(str(template))}</code> (personal)")
-            rows.append([InlineKeyboardButton(f"🗑 Delete {domain[:24]}", callback_data=f"dlapi:delete:{target}:{domain}")])
-        for domain, entry in global_mapping.items():
-            template = entry.get("template", "") if isinstance(entry, dict) else entry
-            enabled = isinstance(entry, dict) and entry.get("global")
-            lines.append(f"• <code>{escape(domain)}</code> → <code>{escape(str(template))}</code> (global {'ON' if enabled else 'OFF'})")
-            rows.append([InlineKeyboardButton(f"🌐 {domain[:20]}: {'Turn OFF' if enabled else 'Turn ON'}", callback_data=f"dlapi:toggle:{target}:{domain}")])
-            rows.append([InlineKeyboardButton(f"🗑 Delete global {domain[:18]}", callback_data=f"dlapi:deleteglobal:{target}:{domain}")])
-        rows.extend(_manager_keyboard(target).inline_keyboard)
-        await query.message.reply_text("\n".join(lines) if len(lines)>1 else "No APIs configured.", reply_markup=InlineKeyboardMarkup(rows))
-    elif action in ("delete", "toggle", "deleteglobal"):
-        if len(parts) < 4:
-            return await query.answer("Invalid API action", show_alert=True)
-        domain = _domain(":".join(parts[3:]))
-        if action == "delete":
-            _api_map(target).pop(domain, None)
-            await database.update_user_data(target)
-            await query.answer(f"Removed {domain}")
-        else:
-            if not _is_admin(query.from_user.id):
-                return await query.answer("Only owner/sudo can manage global APIs.", show_alert=True)
-            gm = _global_map()
-            if action == "deleteglobal":
-                gm.pop(domain, None)
-                await database.update_user_data(Config.OWNER_ID)
-                await query.answer(f"Removed global {domain}")
-            else:
-                entry = gm.get(domain)
-                if not entry:
-                    return await query.answer("Global API not found", show_alert=True)
-                if isinstance(entry, str):
-                    entry = {"template": entry, "global": False}
-                entry["global"] = not bool(entry.get("global"))
-                gm[domain] = entry
-                await database.update_user_data(Config.OWNER_ID)
-                await query.answer(f"Global API {'enabled' if entry['global'] else 'disabled'}")
-        # Refresh the list after the action.
-        mapping = _api_map(target)
-        gm = _global_map() if _is_admin(query.from_user.id) else {}
-        lines = ["<b>Download API mappings</b>"]
-        lines += [f"• <code>{escape(d)}</code> → <code>{escape(str(t))}</code> (personal)" for d, t in mapping.items()]
-        lines += [f"• <code>{escape(d)}</code> → <code>{escape(str(t.get('template', t)))}</code> (global {'ON' if isinstance(t, dict) and t.get('global') else 'OFF'})" for d, t in gm.items()]
-        await query.message.reply_text("\n".join(lines) if len(lines) > 1 else "No APIs configured.", reply_markup=_manager_keyboard(target))
-        return
-    elif action == "cancel":
-        _PENDING.pop(query.from_user.id, None)
-        await query.message.reply_text("API setup cancelled.")
-    await query.answer()
-
-
-@new_task
-async def dlapi_input(_, message):
-    uid = message.from_user.id if message.from_user else 0
-    pending = _PENDING.get(uid)
-    if not pending or not message.text:
-        return
-    value = message.text.strip()
-    if value.lower() in {"cancel", "/cancel"}:
-        _PENDING.pop(uid, None)
-        return await send_message(message, "API setup cancelled.")
-    # Never consume a new command as an API mapping; let its own handler process it.
-    if value.startswith("/"):
-        return
-    target = pending["target"]
-    is_global = pending.get("global", False)
-    if value.lower().startswith("/dlapi "):
-        return
-    if "=" not in value:
-        return await send_message(message, "Invalid format. Send <code>domain.com=https://api.example/api?url=</code>.")
-    domain_raw, template = value.split("=", 1)
-    domain, template = _domain(domain_raw), template.strip()
-    parsed = urlparse(template)
-    if not domain or parsed.scheme not in ("http", "https") or not parsed.netloc or ("{url}" not in template and not template.endswith(("=", "?", "&"))):
-        return await send_message(message, "Invalid API mapping. Ensure the API URL ends in <code>url=</code> or contains <code>{url}</code>.")
-    if is_global:
-        _global_map()[domain] = {"template": template, "global": False}
-        await database.update_user_data(Config.OWNER_ID)
-        reply = f"Saved global API for <code>{escape(domain)}</code>. Global use is OFF by default; enable it with <code>/dlapi global {escape(domain)}=on</code>."
-    else:
-        _api_map(target)[domain] = template
-        await database.update_user_data(target)
-        reply = f"Saved API for <code>{escape(domain)}</code>."
-    _PENDING.pop(uid, None)
-    await send_message(message, reply, reply_markup=_manager_keyboard(uid))
-
-
 @new_task
 async def dlapi_command(_, message):
     """Add/list/remove per-user domain -> API templates. Private chats only."""
@@ -234,45 +76,15 @@ async def dlapi_command(_, message):
     value = args[1].strip() if len(args) > 1 else ""
     mapping = _api_map(uid)
 
-    if value.lower().startswith("global "):
-        if not _is_admin(uid):
-            return await send_message(message, "Only the owner or sudo users can manage global APIs.")
-        setting = value[7:].strip()
-        if "=" not in setting:
-            return await send_message(message, "Use <code>/dlapi global domain.com=on</code> or <code>/dlapi global domain.com=off</code>.")
-        domain_raw, enabled = setting.split("=", 1)
-        domain = _domain(domain_raw)
-        entry = _global_map().get(domain)
-        if not entry:
-            return await send_message(message, f"No global API configured for <code>{escape(domain)}</code>.")
-        if isinstance(entry, str):
-            entry = {"template": entry, "global": False}
-        entry["global"] = enabled.strip().lower() in {"on", "true", "yes", "1", "enable", "enabled"}
-        _global_map()[domain] = entry
-        await database.update_user_data(Config.OWNER_ID)
-        return await send_message(message, f"Global API for <code>{escape(domain)}</code> is now <b>{'ON' if entry['global'] else 'OFF'}</b>.")
-
-    if value.lower() in {"add", "set", "new"} or not value:
-        _PENDING[uid] = {"target": uid, "global": False}
-        return await send_message(
-            message,
-            "<b>Send your API mapping now</b>\n\n"
-            "Format: <code>domain.com=https://api.example/api?url=</code>\n"
-            "Example: <code>gdflix.dev=https://api.example/api?url=</code>\n\n"
-            "The API URL must end with <code>url=</code>, <code>?</code>, or <code>&amp;</code>, or contain <code>{url}</code>.\n"
-            "Send <code>cancel</code> to cancel. This setup is private to your account.",
-            reply_markup=_manager_keyboard(uid),
-        )
-
-    if value.lower() in {"list", "show"}:
+    if not value or value.lower() in {"list", "show"}:
         if not mapping:
             return await send_message(
                 message,
                 "<b>Download API manager</b>\n\n"
-                "Add a mapping with <code>/dlapi add</code>, then send:\n"
-                "<code>domain.com=https://api.example/api?url=</code>\n\n"
+                "Add a mapping by sending:\n"
+                "<code>/dlapi domain.com=https://api.example/api?url=</code>\n\n"
                 "Use <code>/dlapi remove domain.com</code> to remove one.\n"
-                "Use <code>/dapi https://domain.com/file/123</code> to resolve a link.", reply_markup=_manager_keyboard(uid),
+                "Use <code>/dapi https://domain.com/file/123</code> to resolve a link.",
             )
         lines = ["<b>Your download API mappings</b>"]
         for domain, template in sorted(mapping.items()):
@@ -324,8 +136,7 @@ async def dapi_command(_, message):
             "• <code>-tm</code>: select/reorder audio and subtitle tracks\n"
             "• <code>-tc</code>: edit audio/subtitle track title and language\n"
             "• <code>-sync</code>: open the track sync planner before upload\n"
-            "• <code>-tch</code>: convert audio to AAC 7.1 where supported\n\n"
-            "Manage APIs with the buttons below.", reply_markup=_manager_keyboard(message.from_user.id),
+            "• <code>-tch</code>: convert audio to AAC 7.1 where supported",
         )
 
     raw_args = args[1].strip().split()
@@ -346,7 +157,7 @@ async def dapi_command(_, message):
     api_url = template.replace("{url}", encoded) if "{url}" in template else f"{template}{encoded}"
     status = await send_message(message, "Resolving link through your configured API…")
     try:
-        async with AsyncSession(timeout=180) as session:
+        async with AsyncSession(timeout=30) as session:
             response = await session.get(api_url, allow_redirects=True)
             response.raise_for_status()
             try:
@@ -380,13 +191,9 @@ async def dapi_command(_, message):
 
 
 def register_dapi_handlers():
-    TgClient.bot.add_handler(MessageHandler(dlapi_input, filters=private & ~command(BotCommands.DlapiCommand, case_sensitive=True)), group=9)
-    TgClient.bot.add_handler(CallbackQueryHandler(dlapi_callback, filters=__import__("pyrogram").filters.regex(r"^dlapi:")), group=9)
-    # Keep command handlers active in groups only so the command functions can
-    # explicitly tell users that API management/resolution is DM-only.
     TgClient.bot.add_handler(
-        MessageHandler(dlapi_command, filters=command(BotCommands.DlapiCommand, case_sensitive=True))
+        MessageHandler(dlapi_command, filters=command(BotCommands.DlapiCommand, case_sensitive=True) & private)
     )
     TgClient.bot.add_handler(
-        MessageHandler(dapi_command, filters=command(BotCommands.DapiCommand, case_sensitive=True))
+        MessageHandler(dapi_command, filters=command(BotCommands.DapiCommand, case_sensitive=True) & private)
     )

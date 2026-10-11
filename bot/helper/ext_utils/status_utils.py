@@ -248,7 +248,7 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
         else:
             tstatus = task.status()
 
-        msg += f"📦 <b>{index + start_position + 1}. {escape(f'{task.name()}')}</b>\n"
+        msg += f"📦 <b>{index + start_position}. {escape(f'{task.name()}')}</b>\n"
         if task.listener.subname:
             msg += f"┖ <b>Sub Name:</b> {task.listener.subname}\n"
         elapsed = time() - task.listener.message.date.timestamp()
@@ -321,7 +321,6 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
             msg = f"<blockquote><b>No active {status} tasks right now!</b></blockquote>\n\n"
 
     msg += "<b>📊 Bot Status Summary</b>\n"
-    msg += f"<b>Matching tasks:</b> {tasks_no} | <b>Showing:</b> {min(start_position + 1, tasks_no) if tasks_no else 0}-{min(start_position + STATUS_LIMIT, tasks_no)}\n"
     buttons = ButtonMaker()
     if not is_user:
         buttons.data_button(
