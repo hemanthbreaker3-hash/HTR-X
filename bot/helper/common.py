@@ -505,9 +505,14 @@ class TaskConfig:
                 for key, cmds in ffmpeg_dict.items()
             } if isinstance(ffmpeg_dict, dict) else {}
 
-            enc_enabled = Config.ENABLE_ENCODE and (self.user_dict.get("ENABLE_ENCODE") if "ENABLE_ENCODE" in self.user_dict else True)
-            com_enabled = Config.ENABLE_COMPRESS and (self.user_dict.get("ENABLE_COMPRESS") if "ENABLE_COMPRESS" in self.user_dict else True)
-            wm_enabled = Config.ENABLE_WATERMARK and (self.user_dict.get("ENABLE_WATERMARK") if "ENABLE_WATERMARK" in self.user_dict else True)
+            from .. import premium_users
+            from time import time as _now
+            _sender = getattr(getattr(self, "message", None), "from_user", None)
+            _uid = getattr(_sender, "id", None)
+            _premium = bool(_uid and premium_users.get(_uid, 0) > _now())
+            enc_enabled = _premium or (Config.ENABLE_ENCODE and (self.user_dict.get("ENABLE_ENCODE") if "ENABLE_ENCODE" in self.user_dict else True))
+            com_enabled = _premium or (Config.ENABLE_COMPRESS and (self.user_dict.get("ENABLE_COMPRESS") if "ENABLE_COMPRESS" in self.user_dict else True))
+            wm_enabled = _premium or (Config.ENABLE_WATERMARK and (self.user_dict.get("ENABLE_WATERMARK") if "ENABLE_WATERMARK" in self.user_dict else True))
 
             allowed_keys = []
             blocked_keys = []

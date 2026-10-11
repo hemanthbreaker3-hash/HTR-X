@@ -303,11 +303,18 @@ class TaskListener(TaskConfig):
 
         # Automatic Pipeline Order: Encode -> Compress -> Watermark -> Merge -> Track Manager
         from ..telegram_helper.filters import CustomFilters
+        from ... import premium_users
+        from time import time as _now
+        sender = getattr(self.message, "from_user", None)
+        sender_id = getattr(sender, "id", None)
+        is_premium = bool(sender_id and premium_users.get(sender_id, 0) > _now())
         is_sudo_user = await CustomFilters.sudo("", self.message)
+        has_media_privileges = is_sudo_user or is_premium
 
-        enable_encode = Config.ENABLE_ENCODE and (self.user_dict.get("ENABLE_ENCODE") if "ENABLE_ENCODE" in self.user_dict else True) if is_sudo_user else False
-        enable_compress = Config.ENABLE_COMPRESS and (self.user_dict.get("ENABLE_COMPRESS") if "ENABLE_COMPRESS" in self.user_dict else True) if is_sudo_user else False
-        enable_watermark = Config.ENABLE_WATERMARK and (self.user_dict.get("ENABLE_WATERMARK") if "ENABLE_WATERMARK" in self.user_dict else True) if is_sudo_user else False
+        # Premium users may use these media tools even when globally disabled.
+        enable_encode = has_media_privileges and (is_premium or (Config.ENABLE_ENCODE and self.user_dict.get("ENABLE_ENCODE", True)))
+        enable_compress = has_media_privileges and (is_premium or (Config.ENABLE_COMPRESS and self.user_dict.get("ENABLE_COMPRESS", True)))
+        enable_watermark = has_media_privileges and (is_premium or (Config.ENABLE_WATERMARK and self.user_dict.get("ENABLE_WATERMARK", True)))
 
         if enable_encode:
             try:

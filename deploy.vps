@@ -9,8 +9,22 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-APP_DIR=$(pwd)
-SERVICE_NAME="cantarellabots_bot"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+APP_DIR="$SCRIPT_DIR"
+BASE_SERVICE_NAME="cantarellabots_bot"
+SERVICE_NAME="$BASE_SERVICE_NAME"
+# Reuse this repository's existing service when rerunning; otherwise avoid
+# overwriting an unrelated service unit with the same name.
+if [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; then
+  EXISTING_DIR="$(grep -E '^WorkingDirectory=' "/etc/systemd/system/${SERVICE_NAME}.service" | head -n1 | cut -d= -f2- || true)"
+  if [ -n "$EXISTING_DIR" ] && [ "$EXISTING_DIR" != "$APP_DIR" ]; then
+    n=2
+    while [ -e "/etc/systemd/system/${BASE_SERVICE_NAME}${n}.service" ]; do n=$((n+1)); done
+    SERVICE_NAME="${BASE_SERVICE_NAME}${n}"
+    echo "[i] Existing service belongs to another directory; using ${SERVICE_NAME}.service"
+  fi
+fi
 
 echo "[1/6] Updating system and installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
@@ -50,7 +64,8 @@ apt-get install -y -qq \
     libsqlite3-dev \
     libssl-dev \
     libc-ares-dev \
-    libfreeimage-dev
+    libfreeimage-dev \
+    xz-utils
 
 echo "[2/6] Setting up Python virtual environment..."
 if [ ! -d "venv" ]; then
@@ -63,9 +78,16 @@ python -m pip install --upgrade pip
 if [ -f "requirements.txt" ]; then
     python -m pip install -r requirements.txt
     python -m pip install --no-deps "mega.py>=1.0.8"
+    # Keep YouTube extraction dependencies current; cookies must still be valid.
+    python -m pip install --upgrade "yt-dlp[default]" "curl-cffi"
 fi
 
-echo "[3/6] Preparing CANTARELLABOTS runtime, MegaSDK target, directories and permissions..."
+echo "[3/6] Preparing runtime, JavaScript runtime, MegaSDK target, directories and permissions..."
+if ! command -v deno >/dev/null 2>&1; then
+    curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+fi
+export PATH="/usr/local/bin:$PATH"
+command -v deno >/dev/null 2>&1 || { echo "[-] Deno installation failed."; exit 1; }
 export CANTARELLABOTS_MEGA_SDK_VERSION="10.20.20"
 mkdir -p downloads thumbnails tokens rclone cookies Images configs/sabnzbd
 chmod +x start.sh setpkgs.sh tunnel.sh cron_boot.py 2>/dev/null || true
@@ -90,7 +112,7 @@ TimeoutStartSec=180
 KillSignal=SIGINT
 Environment="PATH=$APP_DIR/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="PYTHONUNBUFFERED=1"
-Environment="PYTHONPATH=$APP_DIR"
+Environment="PYTHONPATH=$APP_DIR"\nEnvironment="DENO_INSTALL=/usr/local"
 
 [Install]
 WantedBy=multi-user.target
@@ -104,6 +126,10 @@ echo "[6/6] Starting application service..."
 systemctl restart ${SERVICE_NAME}.service
 
 echo "=== VPS Deployment Complete! ==="
+echo "App Directory: $APP_DIR"
+echo "Python:        $("$APP_DIR/venv/bin/python" --version 2>&1)"
+echo "yt-dlp:        $("$APP_DIR/venv/bin/yt-dlp" --version 2>/dev/null || echo unavailable)"
+echo "Deno:          $(deno --version | head -n1)"
 echo "Service Name: ${SERVICE_NAME}"
 echo "Status Check: systemctl status ${SERVICE_NAME}"
 echo "View Logs:    journalctl -u ${SERVICE_NAME} -f"

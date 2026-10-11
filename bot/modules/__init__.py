@@ -162,3 +162,5 @@ __all__ = [
     "taskuser_command",
     "taskuser_callback",
 ]
+
+from .premium import register_premium_handlers

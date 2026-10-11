@@ -86,6 +86,8 @@ qb_torrents = {}
 jd_downloads = {}
 nzb_jobs = {}
 user_data = {}
+# Premium access cache: {telegram_user_id: expiry_unix_timestamp}
+premium_users = {}
 aria2_options = {}
 qbit_options = {}
 nzb_options = {}

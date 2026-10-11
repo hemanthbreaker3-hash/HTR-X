@@ -3,7 +3,7 @@ from time import time
 from pyrogram.filters import create
 from pyrogram.enums import ChatType
 
-from ... import auth_chats, sudo_users, user_data
+from ... import auth_chats, sudo_users, user_data, premium_users
 from ...core.config_manager import Config
 from .tg_utils import chat_info
 
@@ -62,6 +62,11 @@ class CustomFilters:
         chat_id, thread_id = _chat_context(update)
         if uid is None:
             return False
+        premium_expiry = premium_users.get(uid)
+        if premium_expiry:
+            if premium_expiry > time():
+                return True
+            premium_users.pop(uid, None)
         return bool(
             _is_owner(uid)
             or (

@@ -13,10 +13,13 @@ from ..modules import *
 from ..modules.taskm import taskm_command, taskm_callback, taskuser_command, taskuser_callback
 from ..helper.ext_utils.track_manager import tm_callback, track_manager_text
 from .tg_client import TgClient
+from ..modules.premium import register_premium_handlers, load_premium_users
 
 
 async def add_handlers():
     register_dapi_handlers()
+    register_premium_handlers()
+    await load_premium_users()
     TgClient.bot.add_handler(
         MessageHandler(
             authorize,
