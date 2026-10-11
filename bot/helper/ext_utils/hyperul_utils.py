@@ -121,6 +121,19 @@ class HypertgUpload(HypertgTransfer):
         elif thumb_mode == "none":
             thumb = None
 
+        # AUTO_THUMBNAIL is an independent fallback: use TMDb when enabled and
+        # no custom/random/explicit thumbnail was selected. Keep user thumbnails
+        # and per-task thumbnails higher priority than automatic posters.
+        if thumb is None and not is_image and (
+            self._auto_thumb_enabled()
+        ):
+            try:
+                thumb = await get_auto_thumbnail(self._up_file, force_document or self._listener.as_doc)
+                if thumb and not await aiopath.exists(str(thumb)):
+                    thumb = None
+            except Exception as e:
+                LOGGER.warning("Auto thumbnail lookup failed for %s: %s", self._up_file, e)
+
         if thumb and thumb != "none" and await aiopath.exists(str(thumb)):
             thumb = await apply_thumbnail_watermark(thumb, self._listener.user_dict)
 
